@@ -26,6 +26,9 @@ defmodule AshEvents.Events.Transformers.WrapActions do
 
     ignored = AshEvents.Events.Info.events_ignore_actions!(dsl)
     action_versions = AshEvents.Events.Info.events_current_action_versions!(dsl)
+    atomic? = AshEvents.Events.Info.events_atomic?(dsl)
+    create_timestamp = AshEvents.Events.Info.events_create_timestamp!(dsl)
+    update_timestamp = AshEvents.Events.Info.events_update_timestamp!(dsl)
     resource = Spark.Dsl.Verifier.get_persisted(dsl, :module)
     all_actions = Ash.Resource.Info.actions(dsl)
 
@@ -116,8 +119,46 @@ defmodule AshEvents.Events.Transformers.WrapActions do
       end)
 
     Enum.reduce(event_actions, {:ok, dsl}, fn action, {:ok, dsl} ->
-      wrapped_changes =
-        Enum.flat_map(action.changes, fn change ->
+      if atomic? do
+        # Atomic, record-only mode: leave the action's own changes intact (so it
+        # stays `require_atomic?` per those changes) and just append RecordEvent.
+        record_change = %Ash.Resource.Change{
+          change:
+            {AshEvents.Events.Changes.RecordEvent,
+             [
+               action: action.name,
+               event_log: event_log_resource,
+               version: Keyword.get(action_versions, action.name, 1),
+               create_timestamp: create_timestamp,
+               update_timestamp: update_timestamp
+             ]},
+          on: nil,
+          only_when_valid?: true,
+          description: nil,
+          always_atomic?: false,
+          where: []
+        }
+
+        updated_action = %{action | changes: action.changes ++ [record_change]}
+
+        # A dedicated, non-atomic replay action the Replay routes events to (so
+        # the real action stays atomic and isn't re-recorded during replay). It
+        # reconstructs state from the stored input (`data`) plus the forced PK and
+        # `changed_attributes` — it does NOT re-run the action's business changes.
+        replay_action =
+          build_replay_action(action, apply_replay_primary_key, apply_changed_attributes)
+
+        dsl
+        |> Spark.Dsl.Transformer.replace_entity(
+          [:actions],
+          updated_action,
+          &(&1.name == action.name)
+        )
+        |> Spark.Dsl.Transformer.add_entity([:actions], replay_action)
+        |> then(&{:ok, &1})
+      else
+        wrapped_changes =
+          Enum.flat_map(action.changes, fn change ->
           case change do
             %Ash.Resource.Validation{} = validation ->
               [
@@ -251,8 +292,9 @@ defmodule AshEvents.Events.Transformers.WrapActions do
            [:actions],
            replay_update_action
          )}
-      else
-        {:ok, dsl_with_main_action}
+        else
+          {:ok, dsl_with_main_action}
+        end
       end
     end)
   end
@@ -282,5 +324,31 @@ defmodule AshEvents.Events.Transformers.WrapActions do
           path: [:actions, action.type, action.name, :manual],
           module: resource
     end
+  end
+
+  # Build the dedicated, non-atomic replay action for an atomic-mode tracked
+  # action. It reconstructs the stored state from the event input + forced PK +
+  # `changed_attributes` (via the two replay changes) and is never event-tracked.
+  defp build_replay_action(action, apply_replay_primary_key, apply_changed_attributes) do
+    name = :"ash_events_replay_#{action.name}"
+
+    common = [
+      accept: action.accept,
+      arguments: action.arguments,
+      primary?: false,
+      require_atomic?: false,
+      description: "Auto-generated replay action for #{action.name}",
+      changes: [apply_replay_primary_key, apply_changed_attributes]
+    ]
+
+    opts =
+      case action.type do
+        :create -> Keyword.delete(common, :require_atomic?)
+        :update -> common
+        :destroy -> Keyword.put(common, :return_destroyed?, true)
+      end
+
+    {:ok, replay_action} = Ash.Resource.Builder.build_action(action.type, name, opts)
+    replay_action
   end
 end
