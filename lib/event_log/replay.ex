@@ -131,6 +131,29 @@ defmodule AshEvents.EventLog.Actions.Replay do
     :ok
   end
 
+  # For atomic-mode resources the real action records via a plain change, so
+  # replay targets the generated `ash_events_replay_<action>` instead (non-atomic,
+  # untracked, forces PK + changed_attributes). Falls back to the original action
+  # for manual-mode resources.
+  defp replay_target_action(event) do
+    if atomic_mode?(event.resource) do
+      replay_name = :"ash_events_replay_#{event.action}"
+
+      case Ash.Resource.Info.action(event.resource, replay_name) do
+        nil -> event.action
+        _action -> replay_name
+      end
+    else
+      event.action
+    end
+  end
+
+  defp atomic_mode?(resource) do
+    AshEvents.Events.Info.events_atomic?(resource)
+  rescue
+    _ -> false
+  end
+
   defp handle_action(%{action_type: :create} = event, resource, action, opts) do
     action_struct = Ash.Resource.Info.action(resource, action)
 
@@ -244,7 +267,10 @@ defmodule AshEvents.EventLog.Actions.Replay do
           handle_action(event, route_to.resource, route_to.action, opts)
         end)
       else
-        handle_action(event, event.resource, event.action, opts)
+        # Atomic-mode resources record via a plain change and keep their real
+        # action atomic; replay must route to the dedicated, non-atomic replay
+        # action so it isn't re-recorded and can force the original PK.
+        handle_action(event, event.resource, replay_target_action(event), opts)
       end
     end)
     |> Stream.take_while(fn
