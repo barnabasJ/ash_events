@@ -3,17 +3,18 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshEvents.EmbeddedResourcesTest do
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.EventLogs
 
+  @tag story: "US-AEEMB-01"
   test "handles embedded resources" do
     user =
       Accounts.create_user_embedded!(%{
         given_name: "Embedded User",
         family_name: "Embedded Family",
-        email: "embedded@example.com",
+        email: "embedded-#{Ash.UUID.generate()}@example.com",
         address: %AshEvents.Accounts.Address{
           street: "Embedded Street",
           city: "Embedded City",

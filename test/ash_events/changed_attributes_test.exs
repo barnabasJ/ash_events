@@ -4,7 +4,7 @@
 
 defmodule AshEvents.ChangedAttributesTest do
   @moduledoc false
-  use ExUnit.Case, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts.UserWithAutoAttrs
   alias AshEvents.EventLogs
@@ -12,19 +12,14 @@ defmodule AshEvents.ChangedAttributesTest do
 
   require Ash.Query
 
-  setup do
-    AshEvents.TestRepo.start_link(pool: Ecto.Adapters.SQL.Sandbox)
-    Ecto.Adapters.SQL.Sandbox.mode(AshEvents.TestRepo, :manual)
-    Ecto.Adapters.SQL.Sandbox.checkout(AshEvents.TestRepo)
-
-    :ok
-  end
-
+  @tag story: "US-AECHG-01"
   test "changed_attributes are stored in events" do
+    fixture_email_1 = "test-#{Ash.UUID.generate()}@example.com"
+
     user =
       UserWithAutoAttrs
       |> Ash.Changeset.for_create(:create, %{
-        email: "test@example.com",
+        email: fixture_email_1,
         name: "John Doe"
       })
       |> Ash.create!(actor: %SystemActor{name: "test"})
@@ -44,7 +39,7 @@ defmodule AshEvents.ChangedAttributesTest do
     assert event.changed_attributes["slug"] == "john-doe"
 
     # Verify original data contains only the input parameters
-    assert event.data["email"] == "test@example.com"
+    assert event.data["email"] == fixture_email_1
     assert event.data["name"] == "John Doe"
     # Not in original params
     refute Map.has_key?(event.data, "status")
@@ -52,12 +47,15 @@ defmodule AshEvents.ChangedAttributesTest do
     refute Map.has_key?(event.data, "slug")
   end
 
+  @tag story: "US-AECHG-02"
   test "changed_attributes are applied during replay with force_change mode" do
+    fixture_email_1 = "test-#{Ash.UUID.generate()}@example.com"
+
     # Create a user which will generate auto attributes
     user =
       UserWithAutoAttrs
       |> Ash.Changeset.for_create(:create, %{
-        email: "test@example.com",
+        email: fixture_email_1,
         name: "Jane Doe"
       })
       |> Ash.create!(actor: %SystemActor{name: "test"})
@@ -71,7 +69,7 @@ defmodule AshEvents.ChangedAttributesTest do
     # Verify user was recreated with correct attributes
     replayed_user = Ash.get!(UserWithAutoAttrs, original_id)
 
-    assert replayed_user.email == "test@example.com"
+    assert replayed_user.email == fixture_email_1
     assert replayed_user.name == "Jane Doe"
     # from changed_attributes
     assert replayed_user.status == "active"
@@ -79,10 +77,13 @@ defmodule AshEvents.ChangedAttributesTest do
     assert replayed_user.slug == "jane-doe"
   end
 
+  @tag story: "US-AECHG-03"
   test "changed_attributes are tracked with AshPhoenix.Form and string keys" do
+    fixture_email_1 = "form-#{Ash.UUID.generate()}@example.com"
+
     # Create form params with string keys (typical in web forms)
     form_params = %{
-      "email" => "form@example.com",
+      "email" => fixture_email_1,
       "name" => "Form User"
       # Note: status and slug are not provided, they will be auto-generated
     }
@@ -109,7 +110,7 @@ defmodule AshEvents.ChangedAttributesTest do
     assert event.changed_attributes["slug"] == "form-user"
 
     # Verify original data contains only the form input parameters (as strings)
-    assert event.data["email"] == "form@example.com"
+    assert event.data["email"] == fixture_email_1
     assert event.data["name"] == "Form User"
     # Not in original form params
     refute Map.has_key?(event.data, "status")
@@ -122,7 +123,7 @@ defmodule AshEvents.ChangedAttributesTest do
     # Verify user was recreated with correct attributes including auto-generated ones
     replayed_user = Ash.get!(UserWithAutoAttrs, user.id)
 
-    assert replayed_user.email == "form@example.com"
+    assert replayed_user.email == fixture_email_1
     assert replayed_user.name == "Form User"
     # from changed_attributes during replay
     assert replayed_user.status == "active"
@@ -130,12 +131,13 @@ defmodule AshEvents.ChangedAttributesTest do
     assert replayed_user.slug == "form-user"
   end
 
+  @tag story: "US-AECHG-04"
   test "changed_attributes are captured during updates" do
     # Create a user first
     user =
       UserWithAutoAttrs
       |> Ash.Changeset.for_create(:create, %{
-        email: "test@example.com",
+        email: "test-#{Ash.UUID.generate()}@example.com",
         name: "John Doe"
       })
       |> Ash.create!(actor: %SystemActor{name: "test"})
@@ -161,11 +163,12 @@ defmodule AshEvents.ChangedAttributesTest do
     refute Map.has_key?(update_event.changed_attributes, "status")
   end
 
+  @tag story: "US-AECHG-05"
   test "attributes present in original params are not duplicated in changed_attributes" do
     _user =
       UserWithAutoAttrs
       |> Ash.Changeset.for_create(:create, %{
-        email: "test@example.com",
+        email: "test-#{Ash.UUID.generate()}@example.com",
         name: "John Doe",
         # Explicitly set status
         status: "pending"
@@ -185,10 +188,13 @@ defmodule AshEvents.ChangedAttributesTest do
     refute Map.has_key?(event.data, "slug")
   end
 
+  @tag story: "US-AECHG-06"
   test "AshPhoenix.Form with explicit auto-generated parameters" do
+    fixture_email_1 = "form-#{Ash.UUID.generate()}@example.com"
+
     # Create a form with params that include an explicit status
     form_params = %{
-      "email" => "form@example.com",
+      "email" => fixture_email_1,
       "name" => "Form User",
       # Explicitly setting status (which normally defaults to "active")
       "status" => "inactive"
@@ -211,16 +217,19 @@ defmodule AshEvents.ChangedAttributesTest do
     # Slug was auto-generated but not in original form params, should be in changed_attributes
     assert event.changed_attributes["slug"] == "form-user"
     # Regular attributes should be present in data
-    assert event.data["email"] == "form@example.com"
+    assert event.data["email"] == fixture_email_1
     assert event.data["name"] == "Form User"
   end
 
+  @tag story: "US-AECHG-07"
   test ":as_arguments strategy during replay merges changed_attributes as action arguments" do
+    fixture_email_1 = "test-#{Ash.UUID.generate()}@example.com"
+
     # Create a user first
     user =
       UserWithAutoAttrs
       |> Ash.Changeset.for_create(:create, %{
-        email: "test@example.com",
+        email: fixture_email_1,
         name: "John Doe"
       })
       |> Ash.create!(actor: %SystemActor{name: "test"})
@@ -256,15 +265,18 @@ defmodule AshEvents.ChangedAttributesTest do
     # into the update action arguments during replay
     assert replayed_user.name == "Jane Smith"
     assert replayed_user.slug == "jane-smith"
-    assert replayed_user.email == "test@example.com"
+    assert replayed_user.email == fixture_email_1
   end
 
+  @tag story: "US-AECHG-08"
   test "as_arguments strategy vs force_change strategy behavior difference" do
+    fixture_email_1 = "test-#{Ash.UUID.generate()}@example.com"
+
     # First test create (uses :force_change) - auto-generated attributes go to changed_attributes
     user =
       UserWithAutoAttrs
       |> Ash.Changeset.for_create(:create, %{
-        email: "test@example.com",
+        email: fixture_email_1,
         name: "Test User"
       })
       |> Ash.create!(actor: %SystemActor{name: "test"})
@@ -303,10 +315,13 @@ defmodule AshEvents.ChangedAttributesTest do
     # Final result should be the same regardless of strategy
     assert replayed_user.name == "Updated User"
     assert replayed_user.slug == "updated-user"
-    assert replayed_user.email == "test@example.com"
+    assert replayed_user.email == fixture_email_1
   end
 
+  @tag story: "US-AECHG-09"
   test "as_arguments strategy passes changed_attributes as required arguments during replay" do
+    fixture_email_1 = "test-#{Ash.UUID.generate()}@example.com"
+
     # Generate a user ID for testing
     user_id = Ash.UUID.generate()
 
@@ -316,7 +331,7 @@ defmodule AshEvents.ChangedAttributesTest do
       action_type: :create,
       resource: UserWithAutoAttrs,
       record_id: user_id,
-      data: %{"email" => "test@example.com", "name" => "John Doe"},
+      data: %{"email" => fixture_email_1, "name" => "John Doe"},
       changed_attributes: %{"status" => "active", "slug" => "john-doe"},
       system_actor: "test",
       occurred_at: DateTime.utc_now()
@@ -348,9 +363,10 @@ defmodule AshEvents.ChangedAttributesTest do
     replayed_user = Ash.get!(UserWithAutoAttrs, user_id)
     assert replayed_user.name == "Jane Smith"
     assert replayed_user.slug == "custom-slug"
-    assert replayed_user.email == "test@example.com"
+    assert replayed_user.email == fixture_email_1
   end
 
+  @tag story: "US-AECHG-10"
   test "as_arguments strategy would fail if required argument is not provided during replay" do
     # Generate a user ID for testing
     user_id = Ash.UUID.generate()
@@ -361,7 +377,7 @@ defmodule AshEvents.ChangedAttributesTest do
       action_type: :create,
       resource: UserWithAutoAttrs,
       record_id: user_id,
-      data: %{"email" => "test@example.com", "name" => "John Doe"},
+      data: %{"email" => "test-#{Ash.UUID.generate()}@example.com", "name" => "John Doe"},
       changed_attributes: %{"status" => "active", "slug" => "john-doe"},
       system_actor: "test",
       occurred_at: DateTime.utc_now()

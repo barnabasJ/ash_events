@@ -8,7 +8,7 @@ defmodule AshEvents.BinaryAttributesTest do
 
   Regression test for https://github.com/ash-project/ash_events/issues/64
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.EventLogs.EventLog
@@ -18,6 +18,7 @@ defmodule AshEvents.BinaryAttributesTest do
 
   @binary_hash :crypto.strong_rand_bytes(32)
 
+  @tag story: "US-AEBIN-01"
   test "creating a resource with a binary attribute does not raise Jason.EncodeError" do
     org =
       Accounts.create_org!(
@@ -29,6 +30,7 @@ defmodule AshEvents.BinaryAttributesTest do
     assert org.secret_hash == @binary_hash
   end
 
+  @tag story: "US-AEBIN-02"
   test "binary attribute is stored in event data as base64" do
     Accounts.create_org!(
       %{name: "Binary Event Org", secret_hash: @binary_hash},
@@ -45,6 +47,7 @@ defmodule AshEvents.BinaryAttributesTest do
     assert event.data["secret_hash"] == Base.encode64(@binary_hash)
   end
 
+  @tag story: "US-AEBIN-03"
   test "dump_value and cast_from_embedded round-trip binary values" do
     binary_attr = %Ash.Resource.Attribute{
       name: :secret_hash,
@@ -61,6 +64,7 @@ defmodule AshEvents.BinaryAttributesTest do
     assert restored == @binary_hash
   end
 
+  @tag story: "US-AEBIN-04"
   test "cast_from_embedded passes through nil" do
     binary_attr = %Ash.Resource.Attribute{
       name: :secret_hash,
@@ -71,6 +75,7 @@ defmodule AshEvents.BinaryAttributesTest do
     assert AshEvents.Events.ActionWrapperHelpers.cast_from_embedded(nil, binary_attr) == nil
   end
 
+  @tag story: "US-AEBIN-05"
   test "cast_from_embedded passes through non-binary attribute types unchanged" do
     string_attr = %Ash.Resource.Attribute{
       name: :name,

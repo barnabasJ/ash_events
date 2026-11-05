@@ -8,7 +8,7 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   Tests magic link request and sign-in flows while verifying events are created correctly.
   """
 
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts.User
   alias AshEvents.EventLogs
@@ -16,15 +16,6 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   alias AshEvents.EventLogs.SystemActor
 
   require Ash.Query
-
-  # Helper function to clear all data before each test
-  setup do
-    # Clear all users and events using system actor to bypass policies
-    system_actor = %SystemActor{name: "test_cleanup"}
-    User |> Ash.read!(actor: system_actor) |> Enum.each(&Ash.destroy!(&1, actor: system_actor))
-    EventLog |> Ash.read!() |> Enum.each(&Ash.destroy!/1)
-    :ok
-  end
 
   # Helper function to generate a proper magic link token for testing
   # This uses AshAuthentication's actual magic link token generation
@@ -44,27 +35,30 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   end
 
   describe "magic link request" do
+    @tag story: "US-AEMAGIC-01"
     test "requesting magic link for new email succeeds" do
-      email = "newuser@example.com"
+      email = "newuser-#{Ash.UUID.generate()}@example.com"
 
       # Request magic link
-      {:ok, _result} =
-        User
-        |> Ash.Query.for_read(
-          :request_magic_link,
-          %{email: email},
-          context: %{private: %{ash_authentication?: true}}
-        )
-        |> Ash.read()
+      assert :ok =
+               User
+               |> Ash.ActionInput.for_action(
+                 :request_magic_link,
+                 %{email: email},
+                 context: %{private: %{ash_authentication?: true}}
+               )
+               |> Ash.run_action()
 
       # The request should succeed
       # In a real app, this would send an email with a magic link
-      # Our mock sender just logs the token
+      # The configured external sender accepts delivery without sending real email
     end
+
+    @tag story: "US-AEMAGIC-02"
 
     test "requesting magic link for existing user email succeeds" do
       # First create a user via password registration
-      email = "existing@example.com"
+      email = "existing-#{Ash.UUID.generate()}@example.com"
       password = "password123"
 
       {:ok, _existing_user} =
@@ -80,29 +74,31 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
         |> Ash.create(context: %{private: %{ash_authentication?: true}})
 
       # Request magic link for existing user
-      {:ok, _result} =
-        User
-        |> Ash.Query.for_read(
-          :request_magic_link,
-          %{email: email},
-          context: %{private: %{ash_authentication?: true}}
-        )
-        |> Ash.read()
+      assert :ok =
+               User
+               |> Ash.ActionInput.for_action(
+                 :request_magic_link,
+                 %{email: email},
+                 context: %{private: %{ash_authentication?: true}}
+               )
+               |> Ash.run_action()
 
       # The request should succeed
     end
 
+    @tag story: "US-AEMAGIC-03"
+
     test "magic link request with invalid email format succeeds silently" do
       # Request magic link with invalid email
       # AshAuthentication may succeed silently for security reasons
-      {:ok, _result} =
-        User
-        |> Ash.Query.for_read(
-          :request_magic_link,
-          %{email: "not-an-email"},
-          context: %{private: %{ash_authentication?: true}}
-        )
-        |> Ash.read()
+      assert :ok =
+               User
+               |> Ash.ActionInput.for_action(
+                 :request_magic_link,
+                 %{email: "not-an-email"},
+                 context: %{private: %{ash_authentication?: true}}
+               )
+               |> Ash.run_action()
 
       # The request succeeds silently (security best practice)
       # In a real app, this would not send an email but appears to succeed
@@ -110,10 +106,11 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   end
 
   describe "magic link sign in - new user registration" do
+    @tag story: "US-AEMAGIC-04"
     test "new user can register via magic link and events are created" do
-      email = "magicnew@example.com"
+      email = "magicnew-#{Ash.UUID.generate()}@example.com"
 
-      # Mock a magic link token (in real usage, this comes from the email link)
+      # Mint a real native magic-link token for the registration flow.
       # For testing, we'll use the sign_in_with_magic_link action directly
       # since we can't actually receive emails in tests
 
@@ -159,7 +156,7 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
 
       # Verify event data contains user information (but not sensitive data)
       assert magic_link_event.changed_attributes["email"] == email
-      # Should not store sensitive token
+      # Preserve the recorded source-input contract used by replay
       assert magic_link_event.data["token"] != nil
 
       # Verify event metadata
@@ -173,7 +170,7 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   describe "magic link sign in - existing user" do
     setup do
       # Create an existing user via password registration
-      email = "existing@example.com"
+      email = "existing-#{Ash.UUID.generate()}@example.com"
       password = "existing_password123"
 
       {:ok, user} =
@@ -191,8 +188,10 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
       {:ok, user: user, email: email}
     end
 
+    @tag story: "US-AEMAGIC-05"
+
     test "existing user can sign in via magic link", %{user: existing_user, email: email} do
-      # Generate mock magic link token for existing user
+      # Mint a native magic-link token for the existing user
       token = generate_magic_link_token_for_email(email)
 
       {:ok, existing_user} =
@@ -230,6 +229,7 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   end
 
   describe "magic link authentication with invalid tokens" do
+    @tag story: "US-AEMAGIC-06"
     test "sign in with invalid token format fails" do
       # Attempt sign in with malformed token
       assert_raise Ash.Error.Forbidden, fn ->
@@ -247,27 +247,38 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
       assert Enum.empty?(users)
     end
 
-    test "sign in with expired token fails" do
-      email = "expired@example.com"
+    @tag story: "US-AEMAGIC-07"
 
-      token_secret = Application.get_env(:ash_events, :token_signing_secret)
-      # Generate an expired token
-      expired_token =
-        Phoenix.Token.sign(token_secret, "magic_link", %{
-          email: email,
-          # Expired 1 hour ago
-          exp: System.system_time(:second) - 3600
-        })
+    test "sign in with expired token fails" do
+      email = "expired-#{Ash.UUID.generate()}@example.com"
+
+      strategy = AshAuthentication.Info.strategy!(User, :magic_link)
+
+      {:ok, expired_token, claims} =
+        AshAuthentication.Jwt.token_for_resource(
+          User,
+          %{"act" => strategy.sign_in_action_name, "identity" => email, "exp" => 1},
+          [purpose: :magic_link],
+          %{}
+        )
+
+      assert claims["exp"] == 1
+      assert {:ok, %{"exp" => 1}} = AshAuthentication.Jwt.peek(expired_token)
 
       # Attempt sign in with expired token
-      assert_raise Ash.Error.Forbidden, fn ->
-        User
-        |> Ash.Changeset.for_action(
-          :sign_in_with_magic_link,
-          %{token: expired_token}
-        )
-        |> Ash.create!(context: %{private: %{ash_authentication?: true}})
-      end
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert_raise Ash.Error.Forbidden, fn ->
+            User
+            |> Ash.Changeset.for_action(
+              :sign_in_with_magic_link,
+              %{token: expired_token}
+            )
+            |> Ash.create!(context: %{private: %{ash_authentication?: true}})
+          end
+        end)
+
+      assert log =~ ~s("exp" => 1)
 
       # Verify no user was created
       system_actor = %SystemActor{name: "verify_empty"}
@@ -277,8 +288,9 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   end
 
   describe "event replay with magic link authentication" do
+    @tag story: "US-AEMAGIC-08"
     test "magic link authentication events can be replayed correctly" do
-      email = "replay@example.com"
+      email = "replay-#{Ash.UUID.generate()}@example.com"
 
       # Register user via magic link
       token = generate_magic_link_token_for_email(email)
@@ -310,8 +322,10 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
       # This verifies that the magic link registration was properly replayed
     end
 
+    @tag story: "US-AEMAGIC-09"
+
     test "magic link events for existing users replay correctly" do
-      email = "existing_replay@example.com"
+      email = "existing_replay-#{Ash.UUID.generate()}@example.com"
       password = "password123"
 
       # First create user via password
@@ -383,19 +397,20 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   end
 
   describe "magic link authentication with actor attribution" do
+    @tag story: "US-AEMAGIC-10"
     test "magic link operations with system actors are properly attributed in events" do
-      email = "system@example.com"
+      email = "system-#{Ash.UUID.generate()}@example.com"
       actor = %SystemActor{name: "magic_link_system"}
 
       # Request magic link with system actor
-      {:ok, _result} =
-        User
-        |> Ash.Query.for_read(
-          :request_magic_link,
-          %{email: email},
-          actor: actor
-        )
-        |> Ash.read()
+      assert :ok =
+               User
+               |> Ash.ActionInput.for_action(
+                 :request_magic_link,
+                 %{email: email},
+                 actor: actor
+               )
+               |> Ash.run_action()
 
       # Register via magic link with system actor
       token = generate_magic_link_token_for_email(email)
@@ -426,8 +441,9 @@ defmodule AshEvents.AshAuthenticationMagicLinkTest do
   end
 
   describe "integration with password authentication" do
+    @tag story: "US-AEMAGIC-11"
     test "user can switch between password and magic link authentication" do
-      email = "hybrid@example.com"
+      email = "hybrid-#{Ash.UUID.generate()}@example.com"
       password = "hybrid_password123"
 
       # Start with password registration

@@ -5,12 +5,13 @@
 defmodule AshEvents.MapArgumentsTest do
   alias AshEvents.Accounts.User
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.EventLogs.EventLog
 
   require Ash.Query
 
+  @tag story: "US-AEMAP-01"
   test "map arguments are correctly stored in event data" do
     # Create a user with actor attribution
     user =
@@ -18,7 +19,7 @@ defmodule AshEvents.MapArgumentsTest do
       |> Ash.Changeset.for_create(
         :create,
         %{
-          email: "user@example.com",
+          email: "user-#{Ash.UUID.generate()}@example.com",
           given_name: "John",
           family_name: "Doe",
           hashed_password: "hashed_password_123"
@@ -75,6 +76,7 @@ defmodule AshEvents.MapArgumentsTest do
     assert stored_metadata["nested"]["key3"] == true
   end
 
+  @tag story: "US-AEMAP-02"
   test "nil map arguments are handled correctly" do
     # Create a user with actor attribution
     user =
@@ -82,7 +84,7 @@ defmodule AshEvents.MapArgumentsTest do
       |> Ash.Changeset.for_create(
         :create,
         %{
-          email: "user2@example.com",
+          email: "user2-#{Ash.UUID.generate()}@example.com",
           given_name: "Alice",
           family_name: "Smith",
           hashed_password: "hashed_password_456"

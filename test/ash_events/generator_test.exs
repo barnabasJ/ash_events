@@ -5,7 +5,7 @@
 defmodule AshEvents.GeneratorTest do
   alias AshEvents.Accounts.User
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.EventLogs.EventLog
 
@@ -41,6 +41,7 @@ defmodule AshEvents.GeneratorTest do
     )
   end
 
+  @tag story: "US-AEGEN-01"
   test "changeset_generator creates events with proper actor attribution" do
     # Generate a user using changeset_generator with actor
     user = generate(user_generator(%SystemActor{name: "test_generator"}))
@@ -61,6 +62,7 @@ defmodule AshEvents.GeneratorTest do
     assert user_event.data["email"] == to_string(user.email)
   end
 
+  @tag story: "US-AEGEN-02"
   test "generate_many creates multiple records with events" do
     # Generate multiple users using generate_many (bulk operations)
     users = generate_many(user_generator(%SystemActor{name: "batch_generator"}), 3)
@@ -78,6 +80,7 @@ defmodule AshEvents.GeneratorTest do
     assert length(events) >= 3
   end
 
+  @tag story: "US-AEGEN-03"
   test "multiple generate calls work correctly with events" do
     # Generate multiple users using individual generate calls instead of generate_many
     users =
@@ -101,6 +104,7 @@ defmodule AshEvents.GeneratorTest do
     assert length(events) >= 3
   end
 
+  @tag story: "US-AEGEN-04"
   test "seed_generator bypasses events (no events created)" do
     initial_event_count = Ash.read!(EventLog) |> length()
 
@@ -115,6 +119,7 @@ defmodule AshEvents.GeneratorTest do
     assert final_event_count == initial_event_count
   end
 
+  @tag story: "US-AEGEN-05"
   test "changeset_generator without actor fails authorization" do
     # Attempting to generate without actor should fail due to authorization
     assert_raise Ash.Error.Forbidden, fn ->
@@ -122,8 +127,9 @@ defmodule AshEvents.GeneratorTest do
     end
   end
 
+  @tag story: "US-AEGEN-06"
   test "generator with custom attributes creates events correctly" do
-    custom_email = "custom@example.com"
+    custom_email = "custom-#{Ash.UUID.generate()}@example.com"
 
     user =
       generate(

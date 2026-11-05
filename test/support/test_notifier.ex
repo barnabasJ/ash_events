@@ -4,15 +4,14 @@
 
 defmodule AshEvents.TestNotifier do
   @moduledoc """
-  A simple notifier that sends messages to a registered process for testing purposes.
+  Sends each native notification back to the process that dispatches it.
   """
   use Ash.Notifier
 
   @impl Ash.Notifier
+  @spec notify(notification :: Ash.Notifier.Notification.t()) :: :ok
   def notify(notification) do
-    if pid = Process.whereis(:notifier_test_pid) do
-      send(pid, {:notified, notification})
-    end
+    send(notification.from, {:notified, notification})
 
     :ok
   end

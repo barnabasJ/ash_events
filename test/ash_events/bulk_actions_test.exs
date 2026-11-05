@@ -4,7 +4,7 @@
 
 defmodule AshEvents.BulkActionsTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.User
@@ -12,6 +12,7 @@ defmodule AshEvents.BulkActionsTest do
 
   require Ash.Query
 
+  @tag story: "US-AEBULK-01"
   test "bulk actions works as expected" do
     result =
       1..2
@@ -138,6 +139,7 @@ defmodule AshEvents.BulkActionsTest do
     assert Enum.count(events) == 10
   end
 
+  @tag story: "US-AEBULK-02"
   test "bulk_create works atomically with ignored action" do
     alias AshEvents.Accounts.Org
 
@@ -162,6 +164,7 @@ defmodule AshEvents.BulkActionsTest do
     assert events == []
   end
 
+  @tag story: "US-AEBULK-03"
   test "bulk_update works atomically with ignored action" do
     alias AshEvents.Accounts.Org
 
@@ -193,6 +196,7 @@ defmodule AshEvents.BulkActionsTest do
     assert events == []
   end
 
+  @tag story: "US-AEBULK-04"
   test "bulk_destroy works atomically with ignored action" do
     alias AshEvents.Accounts.Org
 
@@ -224,6 +228,7 @@ defmodule AshEvents.BulkActionsTest do
     assert events == []
   end
 
+  @tag story: "US-AEBULK-05"
   test "bulk_create without return_notifications? should not generate missed notification warnings" do
     result =
       Ash.bulk_create!(
@@ -250,6 +255,7 @@ defmodule AshEvents.BulkActionsTest do
     assert Enum.count(events) == 2
   end
 
+  @tag story: "US-AEBULK-06"
   test "bulk_destroy with soft delete works correctly" do
     alias AshEvents.Accounts.Article
 
@@ -294,6 +300,7 @@ defmodule AshEvents.BulkActionsTest do
     assert Enum.count(events) == 3
   end
 
+  @tag story: "US-AEBULK-07"
   test "bulk_destroy with soft delete and nested bulk operation works correctly" do
     alias AshEvents.Accounts.Article
     alias AshEvents.Accounts.ArticleTag
@@ -358,6 +365,7 @@ defmodule AshEvents.BulkActionsTest do
     assert Enum.count(events) == 3
   end
 
+  @tag story: "US-AEBULK-08"
   test "single create without return_notifications? should work fine" do
     org =
       Accounts.Org

@@ -4,7 +4,7 @@
 
 defmodule AshEvents.DefaultsTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.User
@@ -15,7 +15,8 @@ defmodule AshEvents.DefaultsTest do
   def create_user do
     Accounts.create_user!(
       %{
-        email: "user@example.com",
+        email: "user-#{Ash.UUID.generate()}@example.com",
+        updated_at: ~U[2000-01-01 00:00:00.000000Z],
         given_name: "John",
         family_name: "Doe",
         hashed_password: "hashed_password_123"
@@ -25,6 +26,7 @@ defmodule AshEvents.DefaultsTest do
     )
   end
 
+  @tag story: "US-AEDEF-01"
   test "update_default values are applied as expected" do
     user = create_user()
     initial_updated_at = user.updated_at
@@ -50,11 +52,14 @@ defmodule AshEvents.DefaultsTest do
            "Event changed_attributes should contain the updated_at timestamp"
   end
 
+  @tag story: "US-AEDEF-02"
   test "default values work correctly with Events extension" do
+    fixture_email_1 = "create_test-#{Ash.UUID.generate()}@example.com"
+
     user =
       Accounts.create_user!(
         %{
-          email: "create_test@example.com",
+          email: fixture_email_1,
           given_name: "Create",
           family_name: "Test",
           hashed_password: "hashed_password_123"
@@ -67,7 +72,7 @@ defmodule AshEvents.DefaultsTest do
 
     [event] =
       EventLog
-      |> Ash.Query.filter(resource == ^User and data[:email] == "create_test@example.com")
+      |> Ash.Query.filter(resource == ^User and data[:email] == ^fixture_email_1)
       |> Ash.read!()
 
     assert event.changed_attributes["created_at"] != nil,

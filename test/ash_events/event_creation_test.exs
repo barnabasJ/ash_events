@@ -6,17 +6,15 @@ defmodule AshEvents.EventCreationTest do
   alias AshEvents.Accounts.User
   alias AshEvents.Accounts.UserRole
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.EventLogs.EventLog
 
-  require Ash.Query
-
-  def create_user do
+  def create_user(email) do
     Accounts.create_user!(
       %{
-        email: "user@example.com",
+        email: email,
         given_name: "John",
         family_name: "Doe",
         hashed_password: "hashed_password_123"
@@ -26,8 +24,11 @@ defmodule AshEvents.EventCreationTest do
     )
   end
 
+  @tag story: "US-AECREATE-01"
+
   test "events are created as expected" do
-    create_user()
+    email = "user-#{Ash.UUID.generate()}@example.com"
+    create_user(email)
 
     # Events are inserted in the correct order
     [event, event2] =
@@ -42,7 +43,7 @@ defmodule AshEvents.EventCreationTest do
     assert event.resource == User
 
     assert %{
-             "email" => "user@example.com",
+             "email" => ^email,
              "given_name" => "John",
              "family_name" => "Doe"
            } = event.data
@@ -59,6 +60,8 @@ defmodule AshEvents.EventCreationTest do
            } = event2.data
   end
 
+  @tag story: "US-AECREATE-02"
+
   test "can be used just like normal actions/changesets" do
     opts = [actor: %AshEvents.EventLogs.SystemActor{name: "Some system worker"}]
 
@@ -67,7 +70,7 @@ defmodule AshEvents.EventCreationTest do
       |> Ash.Changeset.for_create(
         :create,
         %{
-          email: "email@email.com",
+          email: "email-#{Ash.UUID.generate()}@email.com",
           given_name: "Given",
           family_name: "Family",
           hashed_password: "hashed_password_123"

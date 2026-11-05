@@ -10,7 +10,7 @@ defmodule AshEvents.ReplayNonWritableIdTest do
   The bug being tested: replay was incorrectly trying to pass the primary key as an action
   input, causing "No such input `id`" errors.
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.EventLogs
@@ -19,11 +19,14 @@ defmodule AshEvents.ReplayNonWritableIdTest do
 
   require Ash.Query
 
+  @tag story: "US-AENWID-01"
   test "replay works with non-writable UUID primary key" do
+    fixture_email_1 = "test-#{Ash.UUID.generate()}@example.com"
+
     # Create a user - the ID is auto-generated and NOT accepted by the action
     user =
       Accounts.create_user_non_writable_id!(
-        %{email: "test@example.com", name: "Test User"},
+        %{email: fixture_email_1, name: "Test User"},
         actor: %SystemActor{name: "test_runner"}
       )
 
@@ -50,15 +53,16 @@ defmodule AshEvents.ReplayNonWritableIdTest do
     # Verify the user was recreated with the same ID
     user = Accounts.get_user_non_writable_id_by_id!(original_id, actor: user)
     assert user.id == original_id
-    assert user.email == "test@example.com"
+    assert user.email == fixture_email_1
     assert user.name == "Test User"
   end
 
+  @tag story: "US-AENWID-02"
   test "replay works with non-writable UUID after update and destroy" do
     # Create
     user =
       Accounts.create_user_non_writable_id!(
-        %{email: "test@example.com", name: "Original Name"},
+        %{email: "test-#{Ash.UUID.generate()}@example.com", name: "Original Name"},
         actor: %SystemActor{name: "test_runner"}
       )
 

@@ -9,7 +9,7 @@ defmodule AshEvents.DestroyActionTest do
   Tests both hard deletes and soft deletes to ensure events are
   properly created and can be replayed.
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.Article
@@ -31,6 +31,7 @@ defmodule AshEvents.DestroyActionTest do
   end
 
   describe "hard delete" do
+    @tag story: "US-AEDEST-01"
     test "creates an event when article is hard deleted" do
       article = create_article()
 
@@ -50,6 +51,7 @@ defmodule AshEvents.DestroyActionTest do
       assert event.system_actor == "test_runner"
     end
 
+    @tag story: "US-AEDEST-02"
     test "hard delete removes the record from the database" do
       article = create_article()
       article_id = article.id
@@ -64,6 +66,7 @@ defmodule AshEvents.DestroyActionTest do
       assert result == []
     end
 
+    @tag story: "US-AEDEST-03"
     test "hard delete event stores the correct record_id" do
       article = create_article(%{title: "Original Title", body: "Original body"})
 
@@ -81,6 +84,7 @@ defmodule AshEvents.DestroyActionTest do
       assert destroy_event.data == %{}
     end
 
+    @tag story: "US-AEDEST-04"
     test "events are created in order: create, update, destroy" do
       article = create_article()
       Accounts.update_article!(article, %{title: "Updated"}, actor: @actor)
@@ -97,6 +101,7 @@ defmodule AshEvents.DestroyActionTest do
       assert Enum.map(events, & &1.action) == [:create, :update, :destroy]
     end
 
+    @tag story: "US-AEDEST-05"
     test "metadata is stored in hard delete events" do
       article = create_article()
 
@@ -116,6 +121,7 @@ defmodule AshEvents.DestroyActionTest do
   end
 
   describe "soft delete" do
+    @tag story: "US-AEDEST-06"
     test "creates an event when article is soft deleted" do
       article = create_article()
 
@@ -135,6 +141,7 @@ defmodule AshEvents.DestroyActionTest do
       assert event.system_actor == "test_runner"
     end
 
+    @tag story: "US-AEDEST-07"
     test "soft delete sets deleted_at on the record" do
       article = create_article()
       assert article.deleted_at == nil
@@ -145,6 +152,7 @@ defmodule AshEvents.DestroyActionTest do
       assert soft_deleted_article.deleted_at != nil
     end
 
+    @tag story: "US-AEDEST-08"
     test "soft deleted record still exists in database" do
       article = create_article()
       article_id = article.id
@@ -160,6 +168,7 @@ defmodule AshEvents.DestroyActionTest do
       assert hd(result).deleted_at != nil
     end
 
+    @tag story: "US-AEDEST-09"
     test "metadata is stored in soft delete events" do
       article = create_article()
 
@@ -179,6 +188,7 @@ defmodule AshEvents.DestroyActionTest do
   end
 
   describe "archive (update-based soft delete pattern)" do
+    @tag story: "US-AEDEST-10"
     test "creates an event when article is archived" do
       article = create_article()
 
@@ -197,6 +207,7 @@ defmodule AshEvents.DestroyActionTest do
       assert event.record_id == article.id
     end
 
+    @tag story: "US-AEDEST-11"
     test "archive sets archived_at on the record" do
       article = create_article()
       assert article.archived_at == nil
@@ -207,6 +218,7 @@ defmodule AshEvents.DestroyActionTest do
       assert archived_article.archived_at != nil
     end
 
+    @tag story: "US-AEDEST-12"
     test "unarchive clears archived_at" do
       article = create_article()
       archived = Accounts.archive_article!(article, actor: @actor)
@@ -217,6 +229,7 @@ defmodule AshEvents.DestroyActionTest do
       assert unarchived.archived_at == nil
     end
 
+    @tag story: "US-AEDEST-13"
     test "unarchive creates an event" do
       article = create_article()
       archived = Accounts.archive_article!(article, actor: @actor)
@@ -233,6 +246,7 @@ defmodule AshEvents.DestroyActionTest do
   end
 
   describe "replay" do
+    @tag story: "US-AEDEST-14"
     test "replays hard delete events correctly" do
       article = create_article(%{title: "Will be deleted"})
       article_id = article.id
@@ -263,6 +277,7 @@ defmodule AshEvents.DestroyActionTest do
       assert result == []
     end
 
+    @tag story: "US-AEDEST-15"
     test "replays soft delete events correctly" do
       article = create_article(%{title: "Will be soft deleted"})
       article_id = article.id
@@ -293,6 +308,7 @@ defmodule AshEvents.DestroyActionTest do
       assert soft_deleted_article.deleted_at != nil
     end
 
+    @tag story: "US-AEDEST-16"
     test "replays archive/unarchive cycle correctly" do
       article = create_article()
       article_id = article.id
@@ -336,6 +352,7 @@ defmodule AshEvents.DestroyActionTest do
       assert final_article.archived_at == nil
     end
 
+    @tag story: "US-AEDEST-17"
     test "replays multiple articles with mixed delete types" do
       article1 = create_article(%{title: "Article 1"})
       article2 = create_article(%{title: "Article 2"})
@@ -369,6 +386,7 @@ defmodule AshEvents.DestroyActionTest do
   end
 
   describe "replay skips event creation during replay" do
+    @tag story: "US-AEDEST-18"
     test "no duplicate events created during hard delete replay" do
       article = create_article()
       Accounts.destroy_article!(article, actor: @actor)
@@ -390,6 +408,7 @@ defmodule AshEvents.DestroyActionTest do
       assert initial_event_count == final_event_count
     end
 
+    @tag story: "US-AEDEST-19"
     test "no duplicate events created during soft delete replay" do
       article = create_article()
       Accounts.soft_destroy_article!(article, actor: @actor)

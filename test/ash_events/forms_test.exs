@@ -4,10 +4,11 @@
 
 defmodule AshEvents.FormsTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
 
+  @tag story: "US-AEFORM-01"
   test "manage_relationship changes are visible for nested form generation" do
     # This verifies the fix for GitHub issue #87:
     # AshPhoenix needs to find ManageRelationship changes in action.changes
@@ -25,7 +26,10 @@ defmodule AshEvents.FormsTest do
            "ManageRelationship change should be directly visible in action.changes, not wrapped"
   end
 
+  @tag story: "US-AEFORM-02"
   test "AshPhoenix nested forms work with manage_relationship on event-tracked resources" do
+    fixture_email_1 = "nested-form-#{Ash.UUID.generate()}@example.com"
+
     actor = %SystemActor{name: "test_runner"}
 
     # Create a form with auto-detected nested forms
@@ -45,7 +49,7 @@ defmodule AshEvents.FormsTest do
 
     # Submit the form with nested params
     params = %{
-      "email" => "nested-form@example.com",
+      "email" => fixture_email_1,
       "given_name" => "Jane",
       "family_name" => "Doe",
       "hashed_password" => "hashed_password_123",
@@ -59,7 +63,7 @@ defmodule AshEvents.FormsTest do
       )
 
     # Verify user was created
-    assert to_string(user.email) == "nested-form@example.com"
+    assert to_string(user.email) == fixture_email_1
 
     # Verify the nested user_role was created
     user = Ash.load!(user, :user_role, actor: actor)
@@ -86,6 +90,7 @@ defmodule AshEvents.FormsTest do
     assert role_event.action == :create_from_parent
   end
 
+  @tag story: "US-AEFORM-03"
   test "replay works correctly for events created via nested forms with manage_relationship" do
     actor = %SystemActor{name: "test_runner"}
 
@@ -95,7 +100,7 @@ defmodule AshEvents.FormsTest do
       |> Ash.Changeset.for_create(
         :create_with_nested_role,
         %{
-          email: "replay-nested@example.com",
+          email: "replay-nested-#{Ash.UUID.generate()}@example.com",
           given_name: "Jane",
           family_name: "Doe",
           hashed_password: "hashed_password_123",
@@ -144,10 +149,11 @@ defmodule AshEvents.FormsTest do
     assert user.user_role.name == "admin"
   end
 
+  @tag story: "US-AEFORM-04"
   test "handles ash phoenix forms correctly" do
     form_params = %{
       "string_key" => "string_value",
-      "email" => "user@example.com",
+      "email" => "user-#{Ash.UUID.generate()}@example.com",
       given_name: "John",
       family_name: "Doe",
       non_existent: "value",

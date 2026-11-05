@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshEvents.ReplayTest do
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
   alias AshEvents.EventLogs.EventLogUuidV7
   alias AshEvents.EventLogs.SystemActor
 
@@ -11,12 +11,10 @@ defmodule AshEvents.ReplayTest do
   alias AshEvents.EventLogs
   alias AshEvents.EventLogs.EventLog
 
-  require Ash.Query
-
   def create_user do
     Accounts.create_user!(
       %{
-        email: "user@example.com",
+        email: "user-#{Ash.UUID.generate()}@example.com",
         given_name: "John",
         family_name: "Doe",
         hashed_password: "hashed_password_123"
@@ -37,6 +35,8 @@ defmodule AshEvents.ReplayTest do
       actor: %SystemActor{name: "test_runner"}
     )
   end
+
+  @tag story: "US-AEREPLAY-01"
 
   test "replay works as expected and skips lifecycle hooks" do
     user = create_user()
@@ -115,6 +115,8 @@ defmodule AshEvents.ReplayTest do
     assert user.family_name == "Anderson"
     assert user.user_role.name == "admin"
   end
+
+  @tag story: "US-AEREPLAY-02"
 
   test "replay works as expected and skips lifecycle hooks with uuidv7" do
     user = create_user_uuidv7()

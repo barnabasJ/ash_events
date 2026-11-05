@@ -9,14 +9,12 @@ defmodule AshEvents.ManageRelationship.BelongsToTest do
   Uses UserRole (belongs_to :user) and Comment (belongs_to :user).
   The FK is on the child resource (user_id).
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.{Comment, UserRole}
   alias AshEvents.EventLogs
   alias AshEvents.EventLogs.{EventLog, SystemActor}
-
-  require Ash.Query
 
   defp create_user_without_role(attrs \\ %{}) do
     default = %{
@@ -31,6 +29,7 @@ defmodule AshEvents.ManageRelationship.BelongsToTest do
   end
 
   describe "belongs_to + :append" do
+    @tag story: "US-AEBTO-01"
     test "action creates record with FK set, event captures FK in changed_attributes" do
       user = create_user_without_role()
 
@@ -51,6 +50,8 @@ defmodule AshEvents.ManageRelationship.BelongsToTest do
       assert Map.has_key?(event.changed_attributes, "user_id")
       assert event.changed_attributes["user_id"] == user.id
     end
+
+    @tag story: "US-AEBTO-02"
 
     test "replay correctly restores FK from changed_attributes" do
       user = create_user_without_role()
@@ -77,6 +78,7 @@ defmodule AshEvents.ManageRelationship.BelongsToTest do
   end
 
   describe "belongs_to + :append (via Comment)" do
+    @tag story: "US-AEBTO-03"
     test "action creates comment with FK, replay restores it" do
       user = create_user_without_role()
 

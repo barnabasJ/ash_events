@@ -6,18 +6,19 @@ defmodule AshEvents.TimestampTest do
   alias AshEvents.Accounts.Org
   alias AshEvents.Accounts.User
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
   alias AshEvents.Accounts
   alias AshEvents.EventLogs.EventLog
 
   require Ash.Query
 
   describe "event occurred_at timestamp matching" do
+    @tag story: "US-AETIME-01"
     test "create action event occurred_at matches create_timestamp" do
       user =
         Accounts.create_user!(
           %{
-            email: "user@example.com",
+            email: "user-#{Ash.UUID.generate()}@example.com",
             given_name: "John",
             family_name: "Doe",
             hashed_password: "hashed_password_123"
@@ -36,11 +37,12 @@ defmodule AshEvents.TimestampTest do
              "Event occurred_at (#{user_create_event.occurred_at}) should match user created_at (#{user.created_at})"
     end
 
+    @tag story: "US-AETIME-02"
     test "update action event occurred_at matches update_timestamp" do
       user =
         Accounts.create_user!(
           %{
-            email: "user@example.com",
+            email: "user-#{Ash.UUID.generate()}@example.com",
             given_name: "John",
             family_name: "Doe",
             hashed_password: "hashed_password_123"
@@ -68,6 +70,7 @@ defmodule AshEvents.TimestampTest do
              "Event occurred_at (#{user_update_event.occurred_at}) should match user updated_at (#{updated_user.updated_at})"
     end
 
+    @tag story: "US-AETIME-03"
     test "org create action event occurred_at matches create_timestamp" do
       org =
         Org
@@ -89,6 +92,7 @@ defmodule AshEvents.TimestampTest do
              "Event occurred_at (#{org_create_event.occurred_at}) should match org created_at (#{org.created_at})"
     end
 
+    @tag story: "US-AETIME-04"
     test "org update action event occurred_at matches update_timestamp" do
       org =
         Org
@@ -121,11 +125,12 @@ defmodule AshEvents.TimestampTest do
              "Event occurred_at (#{org_update_event.occurred_at}) should match org updated_at (#{updated_org.updated_at})"
     end
 
+    @tag story: "US-AETIME-05"
     test "upsert action that creates new record uses create_timestamp for occurred_at" do
       user =
         Accounts.create_user_upsert!(
           %{
-            email: "upsert_new@example.com",
+            email: "upsert_new-#{Ash.UUID.generate()}@example.com",
             given_name: "New",
             family_name: "User",
             hashed_password: "hashed_password_123"
@@ -143,11 +148,16 @@ defmodule AshEvents.TimestampTest do
       assert upsert_event.occurred_at == user.created_at
     end
 
+    @tag story: "US-AETIME-06"
     test "upsert action that updates existing record uses update_timestamp for occurred_at" do
+      fixture_email_1 = "upsert_update-#{Ash.UUID.generate()}@example.com"
+
       user1 =
         Accounts.create_user_upsert!(
           %{
-            email: "upsert_update@example.com",
+            email: fixture_email_1,
+            created_at: ~U[2000-01-01 00:00:00.000000Z],
+            updated_at: ~U[2000-01-01 00:00:00.000000Z],
             given_name: "Initial",
             family_name: "User",
             hashed_password: "hashed_password_123"
@@ -155,13 +165,11 @@ defmodule AshEvents.TimestampTest do
           actor: %SystemActor{name: "test_runner"}
         )
 
-      # Ensure timestamps differ between first and second upsert
-      Process.sleep(10)
-
       user2 =
         Accounts.create_user_upsert!(
           %{
-            email: "upsert_update@example.com",
+            email: fixture_email_1,
+            updated_at: ~U[2000-01-02 00:00:00.000000Z],
             given_name: "Updated",
             family_name: "Person",
             hashed_password: "hashed_password_123"

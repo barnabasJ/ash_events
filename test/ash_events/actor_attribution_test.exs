@@ -4,7 +4,7 @@
 
 defmodule AshEvents.ActorAttributionTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.User
@@ -15,7 +15,7 @@ defmodule AshEvents.ActorAttributionTest do
   def create_user do
     Accounts.create_user!(
       %{
-        email: "user@example.com",
+        email: "user-#{Ash.UUID.generate()}@example.com",
         given_name: "John",
         family_name: "Doe",
         hashed_password: "hashed_password_123"
@@ -25,6 +25,7 @@ defmodule AshEvents.ActorAttributionTest do
     )
   end
 
+  @tag story: "US-AEACT-01"
   test "actor primary key is persisted" do
     user = create_user()
 
@@ -67,6 +68,7 @@ defmodule AshEvents.ActorAttributionTest do
   describe "actions without actor" do
     alias AshEvents.Accounts.Org
 
+    @tag story: "US-AEACT-02"
     test "create action works without an actor" do
       org = Accounts.create_org!(%{name: "Test Org"})
 
@@ -83,6 +85,7 @@ defmodule AshEvents.ActorAttributionTest do
       assert event.system_actor == nil
     end
 
+    @tag story: "US-AEACT-03"
     test "update action works without an actor" do
       org = Accounts.create_org!(%{name: "Test Org"})
 
@@ -105,6 +108,7 @@ defmodule AshEvents.ActorAttributionTest do
       assert update_event.system_actor == nil
     end
 
+    @tag story: "US-AEACT-04"
     test "create action works with actor explicitly set to nil" do
       org = Accounts.create_org!(%{name: "Nil Actor Org"}, actor: nil)
 

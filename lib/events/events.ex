@@ -37,7 +37,7 @@ defmodule AshEvents.Events do
         doc:
           "Record events via a plain change (atomic-capable) instead of the manual " <>
             "action wrapper, so tracked actions can stay `require_atomic? true`. " <>
-            "Resources in this mode are record-only: event replay is not supported."
+            "Generates separate private replay actions that require the native replay context."
       ],
       only_actions: [
         type: {:list, :atom},

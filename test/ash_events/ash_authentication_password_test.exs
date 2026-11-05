@@ -8,7 +8,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
   Tests password registration, sign-in, reset, and change flows while verifying events are created correctly.
   """
 
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts.User
   alias AshEvents.EventLogs
@@ -17,18 +17,10 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
 
   require Ash.Query
 
-  # Helper function to clear all data before each test
-  setup do
-    # Clear all users and events using system actor to bypass policies
-    system_actor = %SystemActor{name: "test_cleanup"}
-    User |> Ash.read!(actor: system_actor) |> Enum.each(&Ash.destroy!(&1, actor: system_actor))
-    EventLog |> Ash.read!() |> Enum.each(&Ash.destroy!/1)
-    :ok
-  end
-
   describe "password registration" do
+    @tag story: "US-AEPASS-01"
     test "user can register with password and events are created" do
-      email = "test@example.com"
+      email = "test-#{Ash.UUID.generate()}@example.com"
       password = "secure_password123"
 
       # Register user with password
@@ -75,8 +67,9 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       assert user_create_event.system_actor == nil
     end
 
+    @tag story: "US-AEPASS-02"
     test "registration with mismatched passwords fails gracefully" do
-      email = "mismatch@example.com"
+      email = "mismatch-#{Ash.UUID.generate()}@example.com"
       system_actor = %SystemActor{name: "registration_system"}
 
       # Attempt registration with mismatched passwords
@@ -108,7 +101,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
   describe "password sign-in" do
     setup do
       # Create a confirmed user for sign-in tests
-      email = "signin@example.com"
+      email = "signin-#{Ash.UUID.generate()}@example.com"
       password = "signin_password123"
 
       {:ok, user} =
@@ -128,6 +121,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       {:ok, user: user, email: email, password: password}
     end
 
+    @tag story: "US-AEPASS-03"
     test "user can sign in with correct password", %{
       user: _user,
       email: email,
@@ -157,6 +151,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       # unless specifically configured to do so
     end
 
+    @tag story: "US-AEPASS-04"
     test "sign-in with incorrect password fails", %{email: email} do
       # Attempt sign-in with incorrect password
       {:error, result} =
@@ -177,7 +172,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
 
   describe "password reset flow" do
     setup do
-      email = "reset@example.com"
+      email = "reset-#{Ash.UUID.generate()}@example.com"
       password = "original_password123"
 
       {:ok, user} =
@@ -197,6 +192,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       {:ok, user: user, email: email, password: password}
     end
 
+    @tag story: "US-AEPASS-05"
     test "password reset request generates token", %{email: email} do
       # Request password reset
       :ok =
@@ -211,13 +207,14 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       # In a real app, this would send an email with a reset token
     end
 
+    @tag story: "US-AEPASS-06"
     test "password reset request with non-existent email succeeds silently" do
       # Request password reset for non-existent email
       :ok =
         User
         |> Ash.ActionInput.for_action(
           :request_password_reset_token,
-          %{email: "nonexistent@example.com"}
+          %{email: "nonexistent-#{Ash.UUID.generate()}@example.com"}
         )
         |> Ash.run_action(context: %{private: %{ash_authentication?: true}})
 
@@ -229,7 +226,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
   describe "password change" do
     setup do
       # Create a confirmed user for password change tests
-      email = "change@example.com"
+      email = "change-#{Ash.UUID.generate()}@example.com"
       password = "original_password123"
 
       {:ok, user} =
@@ -249,6 +246,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       {:ok, user: user, email: email, password: password}
     end
 
+    @tag story: "US-AEPASS-07"
     test "user can change password with correct current password", %{
       user: user,
       password: current_password
@@ -303,6 +301,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       assert password_change_event.data["hashed_password"] == nil
     end
 
+    @tag story: "US-AEPASS-08"
     test "password change with incorrect current password fails", %{user: user} do
       new_password = "new_secure_password123"
 
@@ -324,6 +323,7 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
       assert unchanged_user.hashed_password == user.hashed_password
     end
 
+    @tag story: "US-AEPASS-09"
     test "password change with mismatched new passwords fails", %{
       user: user,
       password: current_password
@@ -350,8 +350,9 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
   end
 
   describe "event replay with password authentication" do
+    @tag story: "US-AEPASS-10"
     test "password authentication events can be replayed correctly" do
-      email = "replay@example.com"
+      email = "replay-#{Ash.UUID.generate()}@example.com"
       password = "replay_password123"
       system_actor = %SystemActor{name: "replay_test"}
 
@@ -414,8 +415,9 @@ defmodule AshEvents.AshAuthenticationPasswordTest do
   end
 
   describe "authentication with actor attribution" do
+    @tag story: "US-AEPASS-11"
     test "password operations with system actors are properly attributed in events" do
-      email = "system@example.com"
+      email = "system-#{Ash.UUID.generate()}@example.com"
       password = "system_password123"
       actor = %SystemActor{name: "test_system"}
 

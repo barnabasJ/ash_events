@@ -9,25 +9,24 @@ defmodule AshEvents.ManageRelationship.HasOneTest do
   Uses User (has_one :user_role) managing UserRole creation.
   The FK (user_id) is on the child resource (UserRole).
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.{User, UserRole}
   alias AshEvents.EventLogs
   alias AshEvents.EventLogs.{EventLog, SystemActor}
 
-  require Ash.Query
-
   @actor %SystemActor{name: "test"}
 
   describe "has_one + :direct_control" do
+    @tag story: "US-AEHONE-01"
     test "creates parent and child, separate events for each" do
       user =
         User
         |> Ash.Changeset.for_create(
           :create_with_nested_role,
           %{
-            email: "ho-dc@example.com",
+            email: "ho-dc-#{Ash.UUID.generate()}@example.com",
             given_name: "Jane",
             family_name: "Doe",
             hashed_password: "hash",
@@ -58,13 +57,15 @@ defmodule AshEvents.ManageRelationship.HasOneTest do
       assert role_event.action == :create_from_parent
     end
 
+    @tag story: "US-AEHONE-02"
+
     test "replay does not duplicate child — child is recreated from its own event" do
       user =
         User
         |> Ash.Changeset.for_create(
           :create_with_nested_role,
           %{
-            email: "ho-dc-replay@example.com",
+            email: "ho-dc-replay-#{Ash.UUID.generate()}@example.com",
             given_name: "Jane",
             family_name: "Doe",
             hashed_password: "hash",
@@ -92,13 +93,14 @@ defmodule AshEvents.ManageRelationship.HasOneTest do
   end
 
   describe "has_one + :create" do
+    @tag story: "US-AEHONE-03"
     test "creates parent and child, replay works correctly" do
       user =
         User
         |> Ash.Changeset.for_create(
           :create_with_role_create,
           %{
-            email: "ho-create@example.com",
+            email: "ho-create-#{Ash.UUID.generate()}@example.com",
             given_name: "Bob",
             family_name: "Smith",
             hashed_password: "hash",

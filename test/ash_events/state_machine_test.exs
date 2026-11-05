@@ -4,10 +4,11 @@
 
 defmodule AshEvents.StateMachineTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
 
+  @tag story: "US-AESTATE-01"
   test "handles ash_state_machine validations" do
     actor = %SystemActor{name: "system"}
 
@@ -20,6 +21,7 @@ defmodule AshEvents.StateMachineTest do
     AshEvents.EventLogs.replay_events_state_machine!([])
   end
 
+  @tag story: "US-AESTATE-02"
   test "default initial state should not be overridden when conditional state transition condition is not met" do
     actor = %SystemActor{name: "test_actor"}
 
@@ -55,6 +57,7 @@ defmodule AshEvents.StateMachineTest do
     assert upload_with_s3_key.state == :uploaded
   end
 
+  @tag story: "US-AESTATE-03"
   test "upsert behavior with conditional state transitions" do
     actor = %SystemActor{name: "test_actor"}
 
@@ -88,6 +91,7 @@ defmodule AshEvents.StateMachineTest do
     assert upload_2.state == :uploaded
   end
 
+  @tag story: "US-AESTATE-04"
   test "multiple upserts without meeting transition condition keep default state" do
     actor = %SystemActor{name: "test_actor"}
 

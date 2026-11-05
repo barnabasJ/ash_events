@@ -7,7 +7,7 @@ defmodule AshEvents.SecurityReportsTest do
   Regression tests for externally reported security findings. Each `describe`
   block covers one report.
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.Article
@@ -24,7 +24,7 @@ defmodule AshEvents.SecurityReportsTest do
     Accounts.create_user_upsert!(
       Map.merge(
         %{
-          email: "security@example.com",
+          email: "security-#{Ash.UUID.generate()}@example.com",
           given_name: "Security",
           family_name: "Tester",
           hashed_password: "hashed_password_123"
@@ -47,6 +47,7 @@ defmodule AshEvents.SecurityReportsTest do
   end
 
   describe "report 2873: event payload columns are sensitive" do
+    @tag story: "US-AESEC-01"
     test "plain event log marks data, changed_attributes and metadata as sensitive" do
       for name <- [:data, :changed_attributes, :metadata] do
         assert %{sensitive?: true} = Ash.Resource.Info.attribute(EventLog, name),
@@ -54,6 +55,7 @@ defmodule AshEvents.SecurityReportsTest do
       end
     end
 
+    @tag story: "US-AESEC-02"
     test "cloaked event log exposes the decrypted payload as sensitive fields" do
       for name <- [:data, :changed_attributes, :metadata] do
         assert %{sensitive?: true} = Ash.Resource.Info.field(EventLogCloaked, name),
@@ -61,8 +63,11 @@ defmodule AshEvents.SecurityReportsTest do
       end
     end
 
+    @tag story: "US-AESEC-03"
     test "inspecting an event redacts the stored payload" do
-      create_upsert_user(%{email: "redact-me@example.com"})
+      fixture_email_1 = "redact-me-#{Ash.UUID.generate()}@example.com"
+
+      create_upsert_user(%{email: fixture_email_1})
 
       [event] =
         EventLog
@@ -71,15 +76,16 @@ defmodule AshEvents.SecurityReportsTest do
 
       inspected = inspect(event)
 
-      assert event.data["email"] == "redact-me@example.com"
+      assert event.data["email"] == fixture_email_1
       # Ecto omits redacted fields from the inspect output entirely
-      refute inspected =~ "redact-me@example.com"
+      refute inspected =~ fixture_email_1
       refute inspected =~ "data:"
       refute inspected =~ "changed_attributes:"
     end
   end
 
   describe "report 2874: destroy failures are propagated" do
+    @tag story: "US-AESEC-04"
     test "destroying a stale record returns an error and does not record a second destroy event" do
       article =
         Accounts.create_article!(%{title: "Stale", body: "Will be deleted twice."}, actor: @actor)
@@ -93,6 +99,7 @@ defmodule AshEvents.SecurityReportsTest do
       assert destroy_event_count(Article, :destroy) == 1
     end
 
+    @tag story: "US-AESEC-05"
     test "soft destroying a stale record returns an error and does not record an event" do
       article =
         Accounts.create_article!(%{title: "Stale", body: "Gone before soft delete."},
@@ -108,6 +115,7 @@ defmodule AshEvents.SecurityReportsTest do
       assert destroy_event_count(Article, :soft_destroy) == 0
     end
 
+    @tag story: "US-AESEC-06"
     test "bulk destroying a stale record reports the error and does not record a second event" do
       article =
         Accounts.create_article!(%{title: "Stale", body: "Bulk deleted twice."}, actor: @actor)
@@ -127,6 +135,7 @@ defmodule AshEvents.SecurityReportsTest do
       assert destroy_event_count(Article, :destroy) == 1
     end
 
+    @tag story: "US-AESEC-07"
     test "bulk soft destroying a stale record reports the error and does not record an event" do
       article =
         Accounts.create_article!(%{title: "Stale", body: "Bulk soft deleted."}, actor: @actor)
@@ -148,6 +157,7 @@ defmodule AshEvents.SecurityReportsTest do
   end
 
   describe "report 2879: generated replay update action is not callable directly" do
+    @tag story: "US-AESEC-08"
     test "the generated action exists and is documented as replay-only" do
       action = Ash.Resource.Info.action(User, :ash_events_replay_create_upsert_update)
 
@@ -156,6 +166,7 @@ defmodule AshEvents.SecurityReportsTest do
       assert action.description =~ "Not callable outside of event replay"
     end
 
+    @tag story: "US-AESEC-09"
     test "calling the generated action outside replay fails and writes no event" do
       user = create_upsert_user()
       events_before = event_count()
@@ -178,6 +189,7 @@ defmodule AshEvents.SecurityReportsTest do
     end
 
     for strategy <- [:atomic, :stream] do
+      @tag story: "US-AESEC-#{if strategy == :atomic, do: 10, else: 11}"
       test "calling the generated action via bulk_update with strategy #{strategy} fails and writes no event" do
         user = create_upsert_user()
         events_before = event_count()
@@ -206,6 +218,7 @@ defmodule AshEvents.SecurityReportsTest do
       end
     end
 
+    @tag story: "US-AESEC-12"
     test "the generated action still runs when invoked with the replay marker" do
       user = create_upsert_user()
 

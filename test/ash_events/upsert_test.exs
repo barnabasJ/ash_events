@@ -4,7 +4,7 @@
 
 defmodule AshEvents.UpsertTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.User
@@ -13,12 +13,15 @@ defmodule AshEvents.UpsertTest do
 
   require Ash.Query
 
+  @tag story: "US-AEUPS-01"
   test "upsert action generates events correctly for both create and update paths" do
+    fixture_email_1 = "upsert-#{Ash.UUID.generate()}@example.com"
+
     # First upsert - should create a new record and generate a create event
     user1 =
       Accounts.create_user_upsert!(
         %{
-          email: "upsert@example.com",
+          email: fixture_email_1,
           given_name: "Initial",
           family_name: "User",
           hashed_password: "hashed_password_123"
@@ -30,7 +33,7 @@ defmodule AshEvents.UpsertTest do
     user2 =
       Accounts.create_user_upsert!(
         %{
-          email: "upsert@example.com",
+          email: fixture_email_1,
           given_name: "Updated",
           family_name: "Person",
           hashed_password: "hashed_password_123"
@@ -47,7 +50,7 @@ defmodule AshEvents.UpsertTest do
     # This is because Ash upserts are conceptually "create" actions, not update actions
     events =
       EventLog
-      |> Ash.Query.filter(resource == ^User and data[:email] == "upsert@example.com")
+      |> Ash.Query.filter(resource == ^User and data[:email] == ^fixture_email_1)
       |> Ash.Query.sort({:id, :asc})
       |> Ash.read!()
 
@@ -61,14 +64,14 @@ defmodule AshEvents.UpsertTest do
     assert first_event.system_actor == "test_upsert"
     assert first_event.data["given_name"] == "Initial"
     assert first_event.data["family_name"] == "User"
-    assert first_event.data["email"] == "upsert@example.com"
+    assert first_event.data["email"] == fixture_email_1
 
     # Second event - upsert that updated existing record, but still shows as create action
     assert second_event.action == :create_upsert
     assert second_event.system_actor == "test_upsert"
     assert second_event.data["given_name"] == "Updated"
     assert second_event.data["family_name"] == "Person"
-    assert second_event.data["email"] == "upsert@example.com"
+    assert second_event.data["email"] == fixture_email_1
 
     # Verify event replay works correctly with upserts
     :ok = EventLogs.replay_events!()
@@ -77,9 +80,10 @@ defmodule AshEvents.UpsertTest do
     replayed_user = Accounts.get_user_by_id!(user2.id, actor: %SystemActor{name: "test_replay"})
     assert replayed_user.given_name == "Updated"
     assert replayed_user.family_name == "Person"
-    assert to_string(replayed_user.email) == "upsert@example.com"
+    assert to_string(replayed_user.email) == fixture_email_1
   end
 
+  @tag story: "US-AEUPS-02"
   test "auto-generated replay update action is created for upsert actions" do
     # Check that the auto-generated replay update action exists
     actions = User |> Ash.Resource.Info.actions()

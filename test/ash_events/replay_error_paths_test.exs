@@ -8,7 +8,7 @@ defmodule AshEvents.ReplayErrorPathsTest do
   on create, validations that fail at replay time, replay aborting on the
   first failing event, and events whose record no longer exists.
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   import ExUnit.CaptureLog
 
@@ -46,9 +46,10 @@ defmodule AshEvents.ReplayErrorPathsTest do
   end
 
   describe "create failing at the data layer" do
+    @tag story: "US-AEERR-01"
     test "unique constraint violation returns an error and writes no event" do
       attrs = %{
-        email: "dupe@example.com",
+        email: "dupe-#{Ash.UUID.generate()}@example.com",
         given_name: "First",
         family_name: "User",
         hashed_password: "hashed_password_123"
@@ -66,6 +67,7 @@ defmodule AshEvents.ReplayErrorPathsTest do
   end
 
   describe "validation failing during replay" do
+    @tag story: "US-AEERR-02"
     test "a validation with a custom message fails replay with that message" do
       article = Accounts.create_article!(%{title: "Archived", body: "Body"}, actor: @actor)
       article = Accounts.archive_article!(article, actor: @actor)
@@ -79,6 +81,7 @@ defmodule AshEvents.ReplayErrorPathsTest do
       assert Exception.message(error) =~ "Article is not archived"
     end
 
+    @tag story: "US-AEERR-03"
     test "a validation without a custom message fails replay with the default message" do
       Accounts.create_org!(%{name: "Valid name"}, actor: @actor)
 
@@ -91,6 +94,7 @@ defmodule AshEvents.ReplayErrorPathsTest do
   end
 
   describe "replay aborting on the first failing event" do
+    @tag story: "US-AEERR-04"
     test "raises, keeps earlier events applied and does not apply later events" do
       before =
         Accounts.create_article!(%{title: "Before the failure", body: "Body"}, actor: @actor)
@@ -112,6 +116,7 @@ defmodule AshEvents.ReplayErrorPathsTest do
   end
 
   describe "events whose record does not exist at replay time" do
+    @tag story: "US-AEERR-05"
     test "update and destroy events for a missing record log a warning and replay continues" do
       article = Accounts.create_article!(%{title: "Orphan", body: "Body"}, actor: @actor)
       article = Accounts.update_article!(article, %{title: "Orphan updated"}, actor: @actor)

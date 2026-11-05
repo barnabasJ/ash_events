@@ -6,9 +6,13 @@ defmodule AshEvents.Events.Transformers.WrapActions do
   @moduledoc false
   use Spark.Dsl.Transformer
 
+  @impl Spark.Dsl.Transformer
+  @spec after?(transformer :: module()) :: boolean()
   def after?(_), do: true
 
   # sobelow_skip ["DOS.BinToAtom"]
+  @impl Spark.Dsl.Transformer
+  @spec transform(dsl :: map()) :: {:ok, map()}
   def transform(dsl) do
     event_log_resource = AshEvents.Events.Info.events_event_log!(dsl)
 
@@ -52,6 +56,7 @@ defmodule AshEvents.Events.Transformers.WrapActions do
     end
 
     reject_manual_actions!(event_actions, resource)
+    reject_atomic_upserts!(event_actions, resource, atomic?)
 
     action_version_names = Keyword.keys(action_versions)
 
@@ -129,6 +134,8 @@ defmodule AshEvents.Events.Transformers.WrapActions do
                action: action.name,
                event_log: event_log_resource,
                version: Keyword.get(action_versions, action.name, 1),
+               advisory_lock_key_generator: advisory_lock_key_generator,
+               advisory_lock_key_default: advisory_lock_key_default,
                create_timestamp: create_timestamp,
                update_timestamp: update_timestamp
              ]},
@@ -139,7 +146,12 @@ defmodule AshEvents.Events.Transformers.WrapActions do
           where: []
         }
 
-        updated_action = %{action | changes: action.changes ++ [record_change]}
+        capture_params = %{
+          store_changeset_params
+          | change: {AshEvents.Events.Changes.StoreChangesetParams, [private?: true]}
+        }
+
+        updated_action = %{action | changes: [capture_params | action.changes] ++ [record_change]}
 
         # A dedicated, non-atomic replay action the Replay routes events to (so
         # the real action stays atomic and isn't re-recorded during replay). It
@@ -159,139 +171,132 @@ defmodule AshEvents.Events.Transformers.WrapActions do
       else
         wrapped_changes =
           Enum.flat_map(action.changes, fn change ->
-          case change do
-            %Ash.Resource.Validation{} = validation ->
-              [
-                %Ash.Resource.Change{
-                  change:
-                    {AshEvents.Events.ReplayValidationWrapper,
-                     [
-                       validation: validation,
-                       message: validation.message
-                     ]},
-                  on: validation.on,
-                  only_when_valid?: validation.only_when_valid?,
-                  description: validation.description,
-                  always_atomic?: false,
-                  where: validation.where || []
-                }
-              ]
+            case change do
+              %Ash.Resource.Validation{} = validation ->
+                [
+                  %Ash.Resource.Change{
+                    change:
+                      {AshEvents.Events.ReplayValidationWrapper,
+                       [
+                         validation: validation,
+                         message: validation.message
+                       ]},
+                    on: validation.on,
+                    only_when_valid?: validation.only_when_valid?,
+                    description: validation.description,
+                    always_atomic?: false,
+                    where: validation.where || []
+                  }
+                ]
 
-            %Ash.Resource.Change{change: {Ash.Resource.Change.ManageRelationship, _}} = change ->
-              # ManageRelationship needs two representations:
-              # 1. An unwrapped copy for AshPhoenix nested form introspection (never executes)
-              # 2. A wrapped copy for proper replay behavior (runs change but strips hooks)
-              introspection_only =
-                %{change | where: [{AshEvents.Events.Validations.Never, []} | change.where || []]}
+              %Ash.Resource.Change{change: {Ash.Resource.Change.ManageRelationship, _}} = change ->
+                # ManageRelationship needs two representations:
+                # 1. An unwrapped copy for AshPhoenix nested form introspection (never executes)
+                # 2. A wrapped copy for proper replay behavior (runs change but strips hooks)
+                introspection_only =
+                  %{
+                    change
+                    | where: [{AshEvents.Events.Validations.Never, []} | change.where || []]
+                  }
 
-              wrapped =
-                %Ash.Resource.Change{
-                  change: {AshEvents.Events.ReplayChangeWrapper, [change: change]},
-                  on: change.on,
-                  only_when_valid?: change.only_when_valid?,
-                  description: change.description,
-                  always_atomic?: change.always_atomic?,
-                  where: change.where || []
-                }
+                wrapped =
+                  %Ash.Resource.Change{
+                    change: {AshEvents.Events.ReplayChangeWrapper, [change: change]},
+                    on: change.on,
+                    only_when_valid?: change.only_when_valid?,
+                    description: change.description,
+                    always_atomic?: change.always_atomic?,
+                    where: change.where || []
+                  }
 
-              [introspection_only, wrapped]
+                [introspection_only, wrapped]
 
-            %Ash.Resource.Change{} = change ->
-              [
-                %Ash.Resource.Change{
-                  change: {AshEvents.Events.ReplayChangeWrapper, [change: change]},
-                  on: change.on,
-                  only_when_valid?: change.only_when_valid?,
-                  description: change.description,
-                  always_atomic?: change.always_atomic?,
-                  where: change.where || []
-                }
-              ]
-          end
-        end)
+              %Ash.Resource.Change{} = change ->
+                [
+                  %Ash.Resource.Change{
+                    change: {AshEvents.Events.ReplayChangeWrapper, [change: change]},
+                    on: change.on,
+                    only_when_valid?: change.only_when_valid?,
+                    description: change.description,
+                    always_atomic?: change.always_atomic?,
+                    where: change.where || []
+                  }
+                ]
+            end
+          end)
 
-      manual_module =
-        case action.type do
-          :create -> AshEvents.CreateActionWrapper
-          :update -> AshEvents.UpdateActionWrapper
-          :destroy -> AshEvents.DestroyActionWrapper
-        end
-
-      manual_action =
-        %{
-          action
-          | manual:
-              {manual_module,
-               [
-                 action: action.name,
-                 event_log: event_log_resource,
-                 version: Keyword.get(action_versions, action.name, 1),
-                 advisory_lock_key_generator: advisory_lock_key_generator,
-                 advisory_lock_key_default: advisory_lock_key_default
-               ]},
-            primary?: action.primary?,
-            arguments: action.arguments,
-            changes:
-              [store_changeset_params, apply_replay_primary_key | wrapped_changes] ++
-                [apply_changed_attributes]
-        }
-        |> then(fn action ->
+        manual_module =
           case action.type do
-            :create -> Map.put(action, :upsert?, action.upsert?)
-            :update -> Map.put(action, :require_atomic?, false)
-            :destroy -> Map.merge(action, %{require_atomic?: false, return_destroyed?: true})
-            _ -> action
+            :create -> AshEvents.CreateActionWrapper
+            :update -> AshEvents.UpdateActionWrapper
+            :destroy -> AshEvents.DestroyActionWrapper
           end
-        end)
 
-      {:ok, dsl_with_main_action} =
-        {:ok,
-         Spark.Dsl.Transformer.replace_entity(
-           dsl,
-           [:actions],
-           manual_action,
-           &(&1.name == action.name)
-         )}
+        manual_action =
+          %{
+            action
+            | manual:
+                {manual_module,
+                 [
+                   action: action.name,
+                   event_log: event_log_resource,
+                   version: Keyword.get(action_versions, action.name, 1),
+                   advisory_lock_key_generator: advisory_lock_key_generator,
+                   advisory_lock_key_default: advisory_lock_key_default
+                 ]},
+              primary?: action.primary?,
+              arguments: action.arguments,
+              changes:
+                [store_changeset_params, apply_replay_primary_key | wrapped_changes] ++
+                  [apply_changed_attributes]
+          }
+          |> then(fn action ->
+            case action.type do
+              :create -> Map.put(action, :upsert?, action.upsert?)
+              :update -> Map.put(action, :require_atomic?, false)
+              :destroy -> Map.merge(action, %{require_atomic?: false, return_destroyed?: true})
+              _ -> action
+            end
+          end)
 
-      if action.type == :create and action.upsert? do
-        replay_update_action_name = :"ash_events_replay_#{action.name}_update"
+        {:ok, dsl_with_main_action} =
+          {:ok,
+           Spark.Dsl.Transformer.replace_entity(
+             dsl,
+             [:actions],
+             manual_action,
+             &(&1.name == action.name)
+           )}
 
-        replay_only_validation = %Ash.Resource.Validation{
-          validation: {AshEvents.Events.Validations.ReplayOnly, []},
-          module: AshEvents.Events.Validations.ReplayOnly,
-          opts: [],
-          only_when_valid?: false,
-          description: "Rejects direct invocation; only event replay may run this action.",
-          message: nil,
-          before_action?: false,
-          always_atomic?: false,
-          where: []
-        }
+        if action.type == :create and action.upsert? do
+          replay_update_action_name = :"ash_events_replay_#{action.name}_update"
 
-        replay_update_action = %Ash.Resource.Actions.Update{
-          name: replay_update_action_name,
-          type: :update,
-          accept: action.accept,
-          arguments: action.arguments,
-          primary?: false,
-          public?: false,
-          description:
-            "Auto-generated by AshEvents for replaying #{action.name} upsert events onto existing records. Not callable outside of event replay.",
-          require_atomic?: false,
-          manual: nil,
-          changes: [replay_only_validation],
-          touches_resources: [],
-          transaction?: nil,
-          metadata: [],
-          delay_global_validations?: false
-        }
+          replay_only_validation = replay_only_validation()
 
-        {:ok,
-         Spark.Dsl.Transformer.add_entity(
-           dsl_with_main_action,
-           [:actions],
-           replay_update_action
-         )}
+          replay_update_action = %Ash.Resource.Actions.Update{
+            name: replay_update_action_name,
+            type: :update,
+            accept: action.accept,
+            arguments: action.arguments,
+            primary?: false,
+            public?: false,
+            description:
+              "Auto-generated by AshEvents for replaying #{action.name} upsert events onto existing records. Not callable outside of event replay.",
+            require_atomic?: false,
+            manual: nil,
+            changes: [replay_only_validation],
+            touches_resources: [],
+            transaction?: nil,
+            metadata: [],
+            delay_global_validations?: false
+          }
+
+          {:ok,
+           Spark.Dsl.Transformer.add_entity(
+             dsl_with_main_action,
+             [:actions],
+             replay_update_action
+           )}
         else
           {:ok, dsl_with_main_action}
         end
@@ -326,6 +331,36 @@ defmodule AshEvents.Events.Transformers.WrapActions do
     end
   end
 
+  defp replay_only_validation do
+    %Ash.Resource.Validation{
+      validation: {AshEvents.Events.Validations.ReplayOnly, []},
+      module: AshEvents.Events.Validations.ReplayOnly,
+      opts: [],
+      only_when_valid?: false,
+      description: "Rejects direct invocation; only event replay may run this action.",
+      message: nil,
+      before_action?: false,
+      always_atomic?: false,
+      where: []
+    }
+  end
+
+  defp reject_atomic_upserts!(_actions, _resource, false), do: :ok
+
+  defp reject_atomic_upserts!(actions, resource, true) do
+    case Enum.find(actions, &(&1.type == :create and &1.upsert?)) do
+      nil ->
+        :ok
+
+      action ->
+        raise Spark.Error.DslError,
+          module: resource,
+          path: [:actions, :create, action.name],
+          message:
+            "Atomic event recording does not support upsert actions. Use manual event recording or exclude #{inspect(action.name)} from tracking."
+    end
+  end
+
   # Build the dedicated, non-atomic replay action for an atomic-mode tracked
   # action. It reconstructs the stored state from the event input + forced PK +
   # `changed_attributes` (via the two replay changes) and is never event-tracked.
@@ -336,16 +371,17 @@ defmodule AshEvents.Events.Transformers.WrapActions do
       accept: action.accept,
       arguments: action.arguments,
       primary?: false,
+      public?: false,
       require_atomic?: false,
       description: "Auto-generated replay action for #{action.name}",
-      changes: [apply_replay_primary_key, apply_changed_attributes]
+      changes: [replay_only_validation(), apply_replay_primary_key, apply_changed_attributes]
     ]
 
     opts =
       case action.type do
         :create -> Keyword.delete(common, :require_atomic?)
         :update -> common
-        :destroy -> Keyword.put(common, :return_destroyed?, true)
+        :destroy -> Keyword.put(common, :soft?, action.soft?)
       end
 
     {:ok, replay_action} = Ash.Resource.Builder.build_action(action.type, name, opts)

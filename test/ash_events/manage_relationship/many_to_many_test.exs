@@ -9,14 +9,12 @@ defmodule AshEvents.ManageRelationship.ManyToManyTest do
   Uses Article (many_to_many :tags, through: ArticleTag).
   Join records are stored in the article_tags table.
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.{Article, ArticleTag}
   alias AshEvents.EventLogs
   alias AshEvents.EventLogs.{EventLog, SystemActor}
-
-  require Ash.Query
 
   @actor %SystemActor{name: "test"}
 
@@ -25,6 +23,7 @@ defmodule AshEvents.ManageRelationship.ManyToManyTest do
   end
 
   describe "many_to_many + :append" do
+    @tag story: "US-AEM2M-01"
     test "creates article with existing tags, join table events created" do
       tag1 = create_tag("elixir")
       tag2 = create_tag("ash")
@@ -55,6 +54,8 @@ defmodule AshEvents.ManageRelationship.ManyToManyTest do
 
       assert length(events) == 2
     end
+
+    @tag story: "US-AEM2M-02"
 
     test "replay restores article-tag associations" do
       tag1 = create_tag("phoenix")
@@ -89,6 +90,7 @@ defmodule AshEvents.ManageRelationship.ManyToManyTest do
   end
 
   describe "many_to_many + :append_and_remove (update)" do
+    @tag story: "US-AEM2M-03"
     test "adding and removing tags via update, replay works" do
       tag1 = create_tag("elixir-ar")
       tag2 = create_tag("ash-ar")

@@ -4,7 +4,7 @@
 
 defmodule AshEvents.ValidationTest do
   alias AshEvents.EventLogs.SystemActor
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.EventLogs
@@ -12,7 +12,7 @@ defmodule AshEvents.ValidationTest do
   def create_user do
     Accounts.create_user!(
       %{
-        email: "user@example.com",
+        email: "user-#{Ash.UUID.generate()}@example.com",
         given_name: "John",
         family_name: "Doe",
         hashed_password: "hashed_password_123"
@@ -22,6 +22,7 @@ defmodule AshEvents.ValidationTest do
     )
   end
 
+  @tag story: "US-AEVAL-01"
   test "atomic changes throws error" do
     user = create_user()
 
@@ -42,6 +43,7 @@ defmodule AshEvents.ValidationTest do
     assert Enum.any?(errors, &(Exception.message(&1) =~ "atomic changes are not compatible"))
   end
 
+  @tag story: "US-AEVAL-02"
   test "replay events on event log missing clear function throws RuntimeError" do
     assert_raise(
       Ash.Error.Unknown,
@@ -49,6 +51,7 @@ defmodule AshEvents.ValidationTest do
     )
   end
 
+  @tag story: "US-AEVAL-03"
   test "only_actions works as expected" do
     create = Ash.Resource.Info.action(Accounts.OrgDetails, :create)
     update = Ash.Resource.Info.action(Accounts.OrgDetails, :update)
@@ -59,6 +62,7 @@ defmodule AshEvents.ValidationTest do
     assert create_not_in_only.manual == nil
   end
 
+  @tag story: "US-AEVAL-04"
   test "handles validation modules in wrapper gracefully" do
     Accounts.create_org!(%{name: "Some org"})
 
@@ -66,6 +70,7 @@ defmodule AshEvents.ValidationTest do
       Accounts.create_org(%{name: "S"})
   end
 
+  @tag story: "US-AEVAL-05"
   test "replay events handles routed actions correctly" do
     create_user()
     [] = Ash.read!(Accounts.RoutedUser)
@@ -80,6 +85,7 @@ defmodule AshEvents.ValidationTest do
     assert user.family_name == "Doe"
   end
 
+  @tag story: "US-AEVAL-06"
   test "before_action?: true delays a validation on a tracked action" do
     org =
       Accounts.create_org_with_before_action_validation!(
@@ -90,6 +96,7 @@ defmodule AshEvents.ValidationTest do
     assert org.active == false
   end
 
+  @tag story: "US-AEVAL-07"
   test "before_action?: true behaves the same on tracked and ignored actions" do
     args = [%{name: "Test Organization"}, [actor: %SystemActor{name: "test_runner"}]]
 
@@ -100,6 +107,7 @@ defmodule AshEvents.ValidationTest do
     assert {:ok, %{active: false}} = ignored
   end
 
+  @tag story: "US-AEVAL-08"
   test "validations receive a Validation.Context on tracked actions" do
     org =
       Accounts.create_org!(%{name: "Test Organization"}, actor: %SystemActor{name: "test_runner"})
@@ -119,6 +127,7 @@ defmodule AshEvents.ValidationTest do
       )
   end
 
+  @tag story: "US-AEVAL-09"
   test "validations that read context.message use the custom message on tracked actions" do
     org =
       Accounts.create_org!(%{name: "Test Organization"}, actor: %SystemActor{name: "test_runner"})
@@ -136,6 +145,7 @@ defmodule AshEvents.ValidationTest do
            ] = errors
   end
 
+  @tag story: "US-AEVAL-10"
   test "custom validation messages are preserved when using AshEvents" do
     # Create an active org (active = true by default)
     org =

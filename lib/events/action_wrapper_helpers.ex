@@ -7,6 +7,17 @@ defmodule AshEvents.Events.ActionWrapperHelpers do
   Helper functions used by the action wrappers.
   """
 
+  @typedoc "Native event-recorder options shared by manual wrappers and the final-result adapter."
+  @type event_options :: [
+          action: atom(),
+          event_log: Ash.Resource.t(),
+          version: integer(),
+          advisory_lock_key_generator: module(),
+          advisory_lock_key_default: integer() | [integer()],
+          create_timestamp: atom() | nil,
+          update_timestamp: atom() | nil
+        ]
+
   @doc """
   Reverses `dump_to_embedded` for a single attribute value.
 
@@ -77,7 +88,32 @@ defmodule AshEvents.Events.ActionWrapperHelpers do
   pass them on to Ash in the shape their action type expects, or notifiers on
   the event log resource never fire.
   """
+  @spec create_event!(
+          changeset :: Ash.Changeset.t(),
+          original_params :: map(),
+          occurred_at :: DateTime.t(),
+          module_opts :: event_options(),
+          opts :: keyword()
+        ) ::
+          [Ash.Notifier.Notification.t()]
   def create_event!(changeset, original_params, occurred_at, module_opts, opts) do
+    create_event!(changeset, original_params, occurred_at, module_opts, opts, nil)
+  end
+
+  @doc """
+  Records a successful final result through the same serialization, scope, lock
+  and notification contract as the manual wrappers. Atomic expressions remain
+  on the original changeset; stored values come from the evaluated result.
+  """
+  @spec create_event!(
+          changeset :: Ash.Changeset.t(),
+          original_params :: map(),
+          occurred_at :: DateTime.t(),
+          module_opts :: event_options(),
+          opts :: keyword(),
+          final_result :: Ash.Resource.Record.t() | nil
+        ) :: [Ash.Notifier.Notification.t()]
+  def create_event!(changeset, original_params, occurred_at, module_opts, opts, final_result) do
     pg_repo = AshPostgres.DataLayer.Info.repo(changeset.resource)
 
     if pg_repo do
@@ -147,16 +183,20 @@ defmodule AshEvents.Events.ActionWrapperHelpers do
     actor = opts[:actor]
 
     record_id =
-      if changeset.action_type == :create do
-        Map.get(changeset.attributes, primary_key)
-      else
-        Map.get(changeset.data, primary_key)
+      cond do
+        not is_nil(final_result) -> Map.fetch!(final_result, primary_key)
+        changeset.action_type == :create -> Map.get(changeset.attributes, primary_key)
+        true -> Map.get(changeset.data, primary_key)
       end
 
     metadata = Map.get(changeset.context, :ash_events_metadata, %{})
 
     # Calculate changed attributes from the final changeset state
-    original_params = Map.get(changeset.context, :original_params, %{})
+    original_params =
+      if is_nil(final_result),
+        do: Map.get(changeset.context, :original_params, %{}),
+        else: original_params
+
     original_param_keys = MapSet.new(Map.keys(original_params))
 
     # belongs_to FK attributes must always be captured in changed_attributes,
@@ -171,7 +211,9 @@ defmodule AshEvents.Events.ActionWrapperHelpers do
       |> MapSet.new()
 
     changed_attributes =
-      Enum.reduce(changeset.attributes, %{}, fn {attr_name, value}, acc ->
+      changeset
+      |> event_attributes(final_result, event_log_resource)
+      |> Enum.reduce(%{}, fn {attr_name, value}, acc ->
         is_belongs_to_fk = MapSet.member?(belongs_to_fk_attrs, attr_name)
 
         if not is_belongs_to_fk and
@@ -209,7 +251,7 @@ defmodule AshEvents.Events.ActionWrapperHelpers do
         end
       end)
 
-    has_atomics? = not Enum.empty?(changeset.atomics)
+    has_atomics? = is_nil(final_result) and not Enum.empty?(changeset.atomics)
 
     event_log_resource
     |> Ash.Changeset.for_create(:create, event_params, opts ++ [authorize?: false])
@@ -222,6 +264,58 @@ defmodule AshEvents.Events.ActionWrapperHelpers do
     end)
     |> Ash.create!(authorize?: false, return_notifications?: true)
     |> then(fn {_event, notifications} -> notifications end)
+  end
+
+  defp event_attributes(changeset, nil, _event_log), do: changeset.attributes
+
+  defp event_attributes(changeset, result, event_log) do
+    affected_keys =
+      changeset.attributes
+      |> Map.keys()
+      |> Enum.concat(Keyword.keys(changeset.atomics))
+      |> MapSet.new()
+
+    cloaked? = AshEvents.EventLog.Info.cloaked?(event_log)
+
+    changeset.resource
+    |> Ash.Resource.Info.attributes()
+    |> Enum.reduce(%{}, fn attribute, attributes ->
+      put_result_attribute(attributes, changeset, result, attribute, affected_keys, cloaked?)
+    end)
+  end
+
+  defp put_result_attribute(attributes, changeset, result, attribute, affected_keys, cloaked?) do
+    case Map.get(result, attribute.name) do
+      %Ash.NotLoaded{} ->
+        attributes
+
+      %Ash.ForbiddenField{} ->
+        attributes
+
+      value ->
+        if (not attribute.sensitive? or cloaked?) and
+             result_attribute_changed?(changeset, attribute, value, affected_keys) do
+          Map.put(attributes, attribute.name, value)
+        else
+          attributes
+        end
+    end
+  end
+
+  defp result_attribute_changed?(%{action_type: :create}, _attribute, _value, _keys), do: true
+
+  defp result_attribute_changed?(changeset, attribute, value, affected_keys) do
+    known_change? = MapSet.member?(affected_keys, attribute.name)
+
+    if is_struct(changeset.data, changeset.resource) do
+      case Map.get(changeset.data, attribute.name) do
+        %Ash.NotLoaded{} -> known_change?
+        %Ash.ForbiddenField{} -> known_change?
+        previous -> previous != value
+      end
+    else
+      known_change? or not is_nil(attribute.update_default)
+    end
   end
 
   @doc """

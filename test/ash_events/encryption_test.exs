@@ -3,14 +3,12 @@
 # SPDX-License-Identifier: MIT
 
 defmodule AshEvents.EncryptionTest do
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.EventLogs
   alias AshEvents.EventLogs.EventLogCloaked
   alias AshEvents.TestRepo
-
-  require Ash.Query
 
   @encrypted_columns [:encrypted_data, :encrypted_changed_attributes, :encrypted_metadata]
   @payload_fields [:data, :changed_attributes, :metadata]
@@ -38,6 +36,8 @@ defmodule AshEvents.EncryptionTest do
     |> Ash.read!()
   end
 
+  @tag story: "US-AEENC-01"
+
   test "cloaked event logs encrypt data and metadata" do
     Accounts.create_org_cloaked!(%{name: "Cloaked name"},
       context: %{ash_events_metadata: %{some: "metadata"}}
@@ -58,6 +58,8 @@ defmodule AshEvents.EncryptionTest do
     assert decrypted_data["name"] == "Cloaked name"
     assert decrypted_metadata["some"] == "metadata"
   end
+
+  @tag story: "US-AEENC-02"
 
   test "cloaked event logs calcs and replay work" do
     org = Accounts.create_org_cloaked!(%{name: "Cloaked name"})
@@ -89,6 +91,7 @@ defmodule AshEvents.EncryptionTest do
   end
 
   describe "ciphertext storage format" do
+    @tag story: "US-AEENC-03"
     test "new events store raw Cloak ciphertext, not base64" do
       Accounts.create_org_cloaked!(%{name: "Raw"},
         context: %{ash_events_metadata: %{some: "metadata"}}
@@ -101,6 +104,8 @@ defmodule AshEvents.EncryptionTest do
                "expected #{column} to start with the Cloak tag byte"
       end
     end
+
+    @tag story: "US-AEENC-04"
 
     test "events stored as base64 by releases before 0.8.0 still decrypt" do
       Accounts.create_org_cloaked!(%{name: "Legacy"},
@@ -117,6 +122,8 @@ defmodule AshEvents.EncryptionTest do
       assert Map.has_key?(legacy.changed_attributes, "id")
     end
 
+    @tag story: "US-AEENC-05"
+
     test "legacy and current format events decrypt in the same read" do
       Accounts.create_org_cloaked!(%{name: "Legacy"})
       [legacy_event] = Ash.read!(EventLogCloaked)
@@ -128,6 +135,8 @@ defmodule AshEvents.EncryptionTest do
       assert legacy.data["name"] == "Legacy"
       assert current.data["name"] == "Current"
     end
+
+    @tag story: "US-AEENC-06"
 
     test "replay rebuilds state from legacy format events" do
       org = Accounts.create_org_cloaked!(%{name: "Legacy"})

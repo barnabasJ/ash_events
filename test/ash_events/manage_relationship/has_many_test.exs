@@ -9,25 +9,24 @@ defmodule AshEvents.ManageRelationship.HasManyTest do
   Uses User (has_many :comments) managing Comment creation.
   The FK (user_id) is on the child resource (Comment).
   """
-  use AshEvents.RepoCase, async: false
+  use AshEvents.RepoCase, async: true
 
   alias AshEvents.Accounts
   alias AshEvents.Accounts.{Comment, User}
   alias AshEvents.EventLogs
   alias AshEvents.EventLogs.{EventLog, SystemActor}
 
-  require Ash.Query
-
   @actor %SystemActor{name: "test"}
 
   describe "has_many + :create" do
+    @tag story: "US-AEHMANY-01"
     test "creates parent with multiple children, separate events for each" do
       user =
         User
         |> Ash.Changeset.for_create(
           :create_with_comments,
           %{
-            email: "hm-create@example.com",
+            email: "hm-create-#{Ash.UUID.generate()}@example.com",
             given_name: "Jane",
             family_name: "Doe",
             hashed_password: "hash",
@@ -54,13 +53,14 @@ defmodule AshEvents.ManageRelationship.HasManyTest do
       assert length(comment_events) == 2
     end
 
+    @tag story: "US-AEHMANY-02"
     test "replay does not duplicate children" do
       user =
         User
         |> Ash.Changeset.for_create(
           :create_with_comments,
           %{
-            email: "hm-replay@example.com",
+            email: "hm-replay-#{Ash.UUID.generate()}@example.com",
             given_name: "Jane",
             family_name: "Doe",
             hashed_password: "hash",
@@ -85,6 +85,7 @@ defmodule AshEvents.ManageRelationship.HasManyTest do
   end
 
   describe "has_many + :direct_control (update)" do
+    @tag story: "US-AEHMANY-03"
     test "adding and removing children via update, replay works" do
       # Create user with one comment
       user =
@@ -92,7 +93,7 @@ defmodule AshEvents.ManageRelationship.HasManyTest do
         |> Ash.Changeset.for_create(
           :create_with_comments,
           %{
-            email: "hm-dc@example.com",
+            email: "hm-dc-#{Ash.UUID.generate()}@example.com",
             given_name: "Jane",
             family_name: "Doe",
             hashed_password: "hash",

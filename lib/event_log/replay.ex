@@ -6,6 +6,7 @@ defmodule AshEvents.EventLog.Actions.Replay do
   @moduledoc """
   Action module used by the event log resource to replay events.
   """
+  use Ash.Resource.Actions.Implementation
   require Ash.Query
   require Logger
 
@@ -166,8 +167,12 @@ defmodule AshEvents.EventLog.Actions.Replay do
       replay_name = :"ash_events_replay_#{event.action}"
 
       case Ash.Resource.Info.action(event.resource, replay_name) do
-        nil -> event.action
-        _action -> replay_name
+        nil ->
+          raise ArgumentError,
+                "Missing atomic replay companion #{inspect(replay_name)} for event #{inspect(event.id)} resource #{inspect(event.resource)} action #{inspect(event.action)} version #{inspect(event.version)}. Configure an explicit replay override for this stored event."
+
+        _action ->
+          replay_name
       end
     else
       event.action
@@ -176,8 +181,6 @@ defmodule AshEvents.EventLog.Actions.Replay do
 
   defp atomic_mode?(resource) do
     AshEvents.Events.Info.events_atomic?(resource)
-  rescue
-    _ -> false
   end
 
   defp handle_action(%{action_type: :create} = event, resource, action, opts) do
@@ -233,6 +236,12 @@ defmodule AshEvents.EventLog.Actions.Replay do
     end
   end
 
+  @impl Ash.Resource.Actions.Implementation
+  @spec run(
+          input :: Ash.ActionInput.t(),
+          run_opts :: keyword(),
+          context :: Ash.Resource.Actions.Implementation.Context.t()
+        ) :: :ok | {:error, term()}
   def run(input, run_opts, ctx) do
     opts =
       Ash.Context.to_opts(ctx,
